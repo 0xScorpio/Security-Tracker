@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<meta name="color-scheme" content="dark">
+	<meta name="darkreader-lock">
+	<title>Security Tracker</title>
+	<style>html[data-darkreader-mode] *,html[data-darkreader-scheme] *{--darkreader-bg--bg:initial!important;--darkreader-text--text:initial!important;--darkreader-border--line:initial!important;background-image:none!important;}</style>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&family=Poppins:wght@500;700&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+	<canvas id="bgCanvas" style="position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;"></canvas>
+	<div class="app" id="app">
+		<aside class="sidebar" id="sidebar">
+			<div class="sidebar-header">
+				<span class="logo"></span>
+				<h1 class="brand" id="brand">Security Tracker</h1>
+			</div>
+			<nav class="sidebar-nav">
+				<a href="#/" class="nav-item" data-route="/"><span class="nav-icon">◉</span><span class="nav-label">Dashboard</span></a>
+				<a href="#/timeline" class="nav-item" data-route="/timeline"><span class="nav-icon">◷</span><span class="nav-label">Timeline</span></a>
+			</nav>
+			<div class="sidebar-credit">built by <a href="https://github.com/0xScorpio" target="_blank" rel="noopener">0xScorpio</a></div>
+			<button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Toggle sidebar">◀</button>
+		</aside>
+
+		<main class="main" id="main">
+			<section class="hero">
+				<div class="hero-left">
+					<h2 class="hero-eyebrow">0xScorpio's Security-Tracker</h2>
+					<h1 class="hero-title">Security-Tracker &mdash; map, track<br>and attack targets with accuracy.</h1>
+					<p class="hero-sub">A compact workspace for target tracking, vulnerability triage, and post-exploitation operations — from recon to root in one dashboard.</p>
+
+					<div class="hero-ctas">
+						<button class="btn btn-primary">Add Target</button>
+						<button class="btn btn-ghost">Explore Templates</button>
+					</div>
+
+					<div class="hero-search card search-card">
+						<input type="text" placeholder="Search targets, findings, commands..." />
+					</div>
+				</div>
+				<div class="hero-right">
+					<div class="hero-preview" aria-hidden="true">
+						<!-- animated illustration (inline SVG) -->
+						<svg class="hero-svg" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+							<defs>
+								<radialGradient id="g1" cx="30%" cy="30%">
+									<stop offset="0%" stop-color="#7c3aed" stop-opacity="0.85" />
+									<stop offset="55%" stop-color="#06b6d4" stop-opacity="0.3" />
+									<stop offset="100%" stop-color="transparent" stop-opacity="0" />
+								</radialGradient>
+								<filter id="blur1" x="-50%" y="-50%" width="200%" height="200%">
+									<feGaussianBlur stdDeviation="22" />
+								</filter>
+															</defs>
+
+							<g class="orb-group" transform="translate(400,260)">
+								<circle class="orb" r="120" fill="url(#g1)" filter="url(#blur1)" />
+								<g class="nodes">
+									<circle class="node n1" cx="-140" cy="-20" r="8" fill="#7c3aed" />
+									<circle class="node n2" cx="-30" cy="-110" r="6" fill="#06b6d4" />
+									<circle class="node n3" cx="80" cy="-60" r="7" fill="#7c3aed" />
+									<circle class="node n4" cx="120" cy="40" r="5" fill="#06b6d4" />
+									<circle class="node n5" cx="-10" cy="90" r="6" fill="#7c3aed" />
+								</g>
+								<g class="links" stroke="rgba(124,58,237,0.2)" stroke-width="1.2" stroke-linecap="round">
+									<line x1="-140" y1="-20" x2="-30" y2="-110" />
+									<line x1="-30" y1="-110" x2="80" y2="-60" />
+									<line x1="80" y1="-60" x2="120" y2="40" />
+									<line x1="120" y1="40" x2="-10" y2="90" />
+								</g>
+							</g>
+						</svg>
+					</div>
+				</div>
+			</section>
+		</main>
+	</div>
+
+	<dialog class="modal" id="machineModal">
+		<form method="dialog" class="modal-card" id="machineForm">
+			<h2>Add Target Machine</h2>
+			<p>Enter the target machine details.</p>
+
+			<label>IP Address *
+				<input name="ip" placeholder="10.10.10.5" required />
+			</label>
+			<label>Hostname
+				<input name="hostname" placeholder="target-01" />
+			</label>
+			<label>Operating System
+				<select name="os_type">
+					<option value="linux">Linux</option>
+					<option value="windows">Windows</option>
+				</select>
+			</label>
+			<label>Tags (comma separated)
+				<input name="tags" placeholder="web, easy, htb" />
+			</label>
+
+			<div class="modal-actions">
+				<button type="button" class="btn btn-ghost" id="cancelMachine">Cancel</button>
+				<button type="submit" class="btn btn-primary">Add Machine</button>
+			</div>
+		</form>
+	</dialog>
+
+	<dialog class="modal" id="credModal">
+		<form method="dialog" class="modal-card" id="credForm">
+			<h2>Add Credential</h2>
+			<p>Store a credential linked to a machine.</p>
+
+			<label>Machine *
+				<select name="machine_id" id="credMachineSelect" required></select>
+			</label>
+			<label>Username *
+				<input name="username" placeholder="admin" required />
+			</label>
+			<label>Password / Hash
+				<input name="password" />
+			</label>
+			<div class="split">
+				<label>Type
+					<select name="cred_type">
+						<option value="plain">Plain Text</option>
+						<option value="hash">Hash</option>
+						<option value="key">SSH Key</option>
+						<option value="token">Token</option>
+					</select>
+				</label>
+				<label>Service
+					<input name="service" placeholder="SSH" />
+				</label>
+			</div>
+
+			<div class="modal-actions">
+				<button type="button" class="btn btn-ghost" id="cancelCred">Cancel</button>
+				<button type="submit" class="btn btn-primary">Add Credential</button>
+			</div>
+		</form>
+	</dialog>
+
+	<dialog class="modal" id="findingViewModal">
+		<div class="modal-card" id="findingViewContent">
+			<!-- populated by JS (mind map click) -->
+		</div>
+	</dialog>
+
+	<dialog class="modal" id="findingEditModal">
+		<div class="modal-card" id="findingEditContent">
+			<!-- populated by JS (edit from findings tab) -->
+		</div>
+	</dialog>
+
+	<dialog class="modal" id="quickFindingModal">
+		<div class="modal-card" id="quickFindingContent">
+			<!-- populated by JS (checklist task/evidence trigger) -->
+		</div>
+	</dialog>
+
+	<dialog class="modal" id="credEditModal">
+		<div class="modal-card" id="credEditContent">
+			<!-- populated by JS (credential edit) -->
+		</div>
+	</dialog>
+
+	<dialog class="modal cred-all-modal" id="credAllModal">
+		<div class="modal-card cred-all-card" id="credAllContent">
+			<!-- populated by JS (all credentials) -->
+		</div>
+	</dialog>
+
+	<dialog class="modal findings-modal" id="findingsModal">
+		<div class="modal-card findings-modal-card" id="findingsModalContent">
+			<!-- populated by JS (all findings) -->
+		</div>
+	</dialog>
+
+	<dialog class="modal findings-modal" id="evidenceModal">
+		<div class="modal-card findings-modal-card" id="evidenceModalContent">
+			<!-- populated by JS (all evidence) -->
+		</div>
+	</dialog>
+
+	<!-- Evidence Preview Overlay -->
+	<dialog id="evidencePreviewOverlay" class="ev-preview-dialog">
+		<div class="ev-preview-container">
+			<button class="ev-preview-close" onclick="closeEvidencePreview()" title="Close (Esc)">✕</button>
+			<div class="ev-preview-loading" style="display:none">Loading…</div>
+			<img class="ev-preview-img" style="display:none" />
+			<object class="ev-preview-object" style="display:none"></object>
+		</div>
+	</dialog>
+
+	<dialog class="modal notes-modal" id="notesModal">
+		<div class="modal-card" id="notesModalContent">
+			<!-- populated by JS (machine notes) -->
+		</div>
+	</dialog>
+
+	<dialog class="modal mm-fs-modal" id="mindmapFsModal">
+		<div class="mm-fs-wrap">
+			<div class="mm-fs-toolbar">
+				<span class="mm-fs-title" id="mmFsTitle"></span>
+				<div class="mm-fs-controls">
+					<button class="btn btn-ghost" id="mmFsZoomIn" title="Zoom in">＋</button>
+					<button class="btn btn-ghost" id="mmFsZoomOut" title="Zoom out">－</button>
+					<button class="btn btn-ghost" id="mmFsZoomReset" title="Reset view">Reset</button>
+					<button class="btn btn-ghost" id="mmFsClose" title="Close">✕</button>
+				</div>
+			</div>
+			<div class="mm-fs-viewport" id="mmFsViewport">
+				<div class="mm-fs-canvas" id="mmFsCanvas"></div>
+			</div>
+		</div>
+	</dialog>
+	<script src="app.js"></script>
+	<script>
+	(function(){
+	  const canvas = document.getElementById('bgCanvas');
+	  const ctx = canvas.getContext('2d');
+	  let W, H;
+
+	  function resize(){
+	    W = canvas.width  = window.innerWidth;
+	    H = canvas.height = window.innerHeight;
+	  }
+	  window.addEventListener('resize', resize);
+	  resize();
+
+	  /* ---- particle system ---- */
+	  const COLORS = [
+	    '124,58,237',   /* purple */
+	    '139,92,246',   /* violet */
+	    '6,182,212',    /* cyan */
+	    '59,130,246',   /* blue */
+	    '168,85,247',   /* light purple */
+	  ];
+
+	  class Line {
+	    constructor(){
+	      this.reset(true);
+	    }
+	    /* Pick a cardinal direction (up/down/left/right) and a random segment length */
+	    newDir(){
+	      const speed = 2.8 + Math.random() * 5.2;
+	      const dir = Math.floor(Math.random() * 4);
+	      this.vx = dir === 0 ? speed : dir === 1 ? -speed : 0;
+	      this.vy = dir === 2 ? speed : dir === 3 ? -speed : 0;
+	      /* travel 40–220 px before turning */
+	      this.segDist = 40 + Math.random() * 180;
+	    }
+	    reset(cold){
+	      /* spawn anywhere along the edges */
+	      const edge = Math.floor(Math.random() * 4);
+	      if(edge === 0){ this.x = Math.random()*W; this.y = -10; }
+	      else if(edge === 1){ this.x = W+10; this.y = Math.random()*H; }
+	      else if(edge === 2){ this.x = Math.random()*W; this.y = H+10; }
+	      else { this.x = -10; this.y = Math.random()*H; }
+
+	      if(cold){
+	        this.x = Math.random()*W;
+	        this.y = Math.random()*H;
+	      }
+
+	      this.len   = 60 + Math.random() * 180;
+	      this.width = 0.6 + Math.random() * 1.6;
+	      this.color = COLORS[Math.floor(Math.random()*COLORS.length)];
+	      this.alpha = 0.4 + Math.random() * 0.55;
+	      this.life  = 0;
+	      this.maxLife = 80 + Math.random() * 220;
+	      this.trail = [];
+	      this.newDir();
+	    }
+	    update(){
+	      this.trail.push({x: this.x, y: this.y});
+	      if(this.trail.length > 28) this.trail.shift();
+	      this.x += this.vx;
+	      this.y += this.vy;
+	      this.life++;
+	      this.segDist -= Math.abs(this.vx) + Math.abs(this.vy);
+	      if(this.segDist <= 0) this.newDir();
+	      if(this.life > this.maxLife ||
+	         this.x < -250 || this.x > W+250 ||
+	         this.y < -250 || this.y > H+250){
+	        this.reset(false);
+	      }
+	    }
+	    draw(){
+	      if(this.trail.length < 2) return;
+	      const fade = Math.min(this.life/20, 1) * Math.min((this.maxLife - this.life)/20, 1);
+	      ctx.save();
+	      ctx.lineCap = 'round';
+	      for(let i=1; i<this.trail.length; i++){
+	        const t = i / this.trail.length;
+	        ctx.beginPath();
+	        ctx.moveTo(this.trail[i-1].x, this.trail[i-1].y);
+	        ctx.lineTo(this.trail[i].x,   this.trail[i].y);
+	        ctx.strokeStyle = `rgba(${this.color},${t * this.alpha * fade})`;
+	        ctx.lineWidth = this.width * t;
+	        ctx.stroke();
+	      }
+	      /* bright head glow */
+	      ctx.beginPath();
+	      ctx.arc(this.x, this.y, this.width * 1.4, 0, Math.PI*2);
+	      ctx.fillStyle = `rgba(${this.color},${this.alpha * fade * 0.9})`;
+	      ctx.fill();
+	      /* soft glow halo */
+	      const grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.width * 8);
+	      grd.addColorStop(0,   `rgba(${this.color},${0.18 * fade})`);
+	      grd.addColorStop(1,   `rgba(${this.color},0)`);
+	      ctx.beginPath();
+	      ctx.arc(this.x, this.y, this.width * 8, 0, Math.PI*2);
+	      ctx.fillStyle = grd;
+	      ctx.fill();
+	      ctx.restore();
+	    }
+	  }
+
+	  /* spawn 60 lines */
+	  const lines = Array.from({length: 60}, () => new Line());
+
+	  function frame(){
+	    /* semi-transparent clear for motion blur trail */
+	    ctx.fillStyle = 'rgba(13,10,30,0.20)';
+	    ctx.fillRect(0, 0, W, H);
+
+	    lines.forEach(l => { l.update(); l.draw(); });
+	    requestAnimationFrame(frame);
+	  }
+
+	  /* initial fill so there's no flash */
+	  ctx.fillStyle = '#0d0a1e';
+	  ctx.fillRect(0, 0, W, H);
+	  requestAnimationFrame(frame);
+	})();
+	</script>
+</body>
+</html>
