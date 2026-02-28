@@ -9,6 +9,7 @@
 - **Timeline view**
 - **Local storage persistence**
 
+## Installation
 
 ```bash
 
