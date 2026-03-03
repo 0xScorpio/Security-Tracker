@@ -1,5 +1,19 @@
 <!doctype html>
+<!--
+  index.html — Security Tracker
+  ============================================================
+  Single-page app shell. All routing and rendering is done by
+  app.js; this file provides:
+    1. <head>   – meta, Dark Reader lock, Google Fonts, stylesheet
+    2. <canvas> – particle background animation (script at bottom)
+    3. Sidebar  – nav links: Dashboard & Timeline
+    4. Hero     – landing section with SVG illustration
+    5. Dialogs  – 9 <dialog> modals (machine, cred, finding, etc.)
+    6. Scripts  – URL cleaner, data.js, app.js, particle system
+  ============================================================ -->
 <html lang="en">
+
+<!-- ============ HEAD – meta, fonts, Dark Reader lock ============ -->
 <head>
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,8 +27,11 @@
 	<link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+	<!-- Background particle canvas (animated by inline script at bottom) -->
 	<canvas id="bgCanvas" style="position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;"></canvas>
 	<div class="app" id="app">
+
+		<!-- ============ SIDEBAR – navigation ============ -->
 		<aside class="sidebar" id="sidebar">
 			<div class="sidebar-header">
 				<span class="logo"></span>
@@ -24,15 +41,19 @@
 				<a href="#/" class="nav-item" data-route="/"><span class="nav-icon">◉</span><span class="nav-label">Dashboard</span></a>
 				<a href="#/timeline" class="nav-item" data-route="/timeline"><span class="nav-icon">◷</span><span class="nav-label">Timeline</span></a>
 			</nav>
-			<div class="sidebar-credit">built by <a href="https://github.com/0xScorpio" target="_blank" rel="noopener">0xScorpio</a></div>
+			<div class="sidebar-credit">
+				<div><a href="#" class="back-link" style="display:none;">← vno/project</a></div>
+				<div>built by <a href="https://github.com/0xScorpio" target="_blank" rel="noopener">0xScorpio</a></div>
+			</div>
 			<button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Toggle sidebar">◀</button>
 		</aside>
 
+		<!-- ============ MAIN – hero (replaced by app.js on route change) ============ -->
 		<main class="main" id="main">
 			<section class="hero">
 				<div class="hero-left">
 					<h2 class="hero-eyebrow">0xScorpio's Security-Tracker</h2>
-					<h1 class="hero-title">Security-Tracker &mdash; map, track<br>and attack targets with accuracy.</h1>
+					<h1 class="hero-title">Security-Tracker &mdash; map, track<br>and attack targets with speed</h1>
 					<p class="hero-sub">A compact workspace for target tracking, vulnerability triage, and post-exploitation operations — from recon to root in one dashboard.</p>
 
 					<div class="hero-ctas">
@@ -57,7 +78,7 @@
 								<filter id="blur1" x="-50%" y="-50%" width="200%" height="200%">
 									<feGaussianBlur stdDeviation="22" />
 								</filter>
-															</defs>
+							</defs>
 
 							<g class="orb-group" transform="translate(400,260)">
 								<circle class="orb" r="120" fill="url(#g1)" filter="url(#blur1)" />
@@ -82,6 +103,9 @@
 		</main>
 	</div>
 
+	<!-- ============ DIALOG MODALS ============ -->
+
+	<!-- Add / Edit target machine -->
 	<dialog class="modal" id="machineModal">
 		<form method="dialog" class="modal-card" id="machineForm">
 			<h2>Add Target Machine</h2>
@@ -110,6 +134,7 @@
 		</form>
 	</dialog>
 
+	<!-- Add credential -->
 	<dialog class="modal" id="credModal">
 		<form method="dialog" class="modal-card" id="credForm">
 			<h2>Add Credential</h2>
@@ -145,42 +170,49 @@
 		</form>
 	</dialog>
 
+	<!-- View a finding (read-only, from mind-map click) -->
 	<dialog class="modal" id="findingViewModal">
 		<div class="modal-card" id="findingViewContent">
 			<!-- populated by JS (mind map click) -->
 		</div>
 	</dialog>
 
+	<!-- Edit a finding -->
 	<dialog class="modal" id="findingEditModal">
 		<div class="modal-card" id="findingEditContent">
 			<!-- populated by JS (edit from findings tab) -->
 		</div>
 	</dialog>
 
+	<!-- Quick-add finding from checklist task/evidence -->
 	<dialog class="modal" id="quickFindingModal">
 		<div class="modal-card" id="quickFindingContent">
 			<!-- populated by JS (checklist task/evidence trigger) -->
 		</div>
 	</dialog>
 
+	<!-- Edit a credential -->
 	<dialog class="modal" id="credEditModal">
 		<div class="modal-card" id="credEditContent">
 			<!-- populated by JS (credential edit) -->
 		</div>
 	</dialog>
 
+	<!-- All credentials modal -->
 	<dialog class="modal cred-all-modal" id="credAllModal">
 		<div class="modal-card cred-all-card" id="credAllContent">
 			<!-- populated by JS (all credentials) -->
 		</div>
 	</dialog>
 
+	<!-- All findings modal -->
 	<dialog class="modal findings-modal" id="findingsModal">
 		<div class="modal-card findings-modal-card" id="findingsModalContent">
 			<!-- populated by JS (all findings) -->
 		</div>
 	</dialog>
 
+	<!-- All evidence modal -->
 	<dialog class="modal findings-modal" id="evidenceModal">
 		<div class="modal-card findings-modal-card" id="evidenceModalContent">
 			<!-- populated by JS (all evidence) -->
@@ -197,12 +229,14 @@
 		</div>
 	</dialog>
 
+	<!-- Machine notes modal -->
 	<dialog class="modal notes-modal" id="notesModal">
 		<div class="modal-card" id="notesModalContent">
 			<!-- populated by JS (machine notes) -->
 		</div>
 	</dialog>
 
+	<!-- Mind-map fullscreen modal (pan/zoom workspace) -->
 	<dialog class="modal mm-fs-modal" id="mindmapFsModal">
 		<div class="mm-fs-wrap">
 			<div class="mm-fs-toolbar">
@@ -219,7 +253,33 @@
 			</div>
 		</div>
 	</dialog>
+
+	<!-- ============ SCRIPTS ============ -->
+
+	<!-- URL cleaner: strips /index.html when served from a real server -->
+	<script>
+	  (function () {
+	    try {
+	      // On a real server, clean index.html from URLs
+	      if (window.location.protocol !== 'file:') {
+	        // Strip index.html from address bar
+	        if (window.location.pathname.endsWith('/index.html')) {
+	          history.replaceState(null, '', window.location.pathname.replace(/\/index\.html$/, '/'));
+	        }
+	        // Clean back link to use directory URL
+	        var back = document.querySelector('.back-link');
+	        if (back) back.style.display = 'none';
+	      }
+	    } catch (e) {}
+	  })();
+	</script>
+
+	<!-- Application data (checklist phases, normalizers) -->
+	<script src="data.js"></script>
+
+	<!-- Core application logic (state, routing, rendering, event wiring) -->
 	<script src="app.js"></script>
+	<!-- Background particle animation — 60 circuit-style lines -->
 	<script>
 	(function(){
 	  const canvas = document.getElementById('bgCanvas');
