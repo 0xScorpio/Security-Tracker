@@ -1012,6 +1012,8 @@ function renderDashboard() {
           <div class="small dim" id="browserStorageMeter">Browser Quota: estimating...</div>
         </div>
         <div class="actions">
+          <button class="btn btn-ghost" id="importXmlBtn" title="Import machines from XML">⬆ Import</button>
+          <button class="btn btn-ghost" id="exportXmlBtn" title="Export all data to XML">⬇ Export</button>
           <button class="btn btn-ghost" id="resetMachinesBtn">Reset Machines</button>
           <button class="btn btn-primary" id="openMachineModal">Add Machine</button>
         </div>
@@ -1751,6 +1753,8 @@ function renderMachineDetail(machine) {
             <button class="tab" id="openCredModalTab">🔑 Credentials (${machineCredentials(machine.id).length})</button>
             <button class="tab" id="openFindingsModalTab">🔍 Findings (${machineFindings(machine.id).length})</button>
             <button class="tab" id="openEvidenceModalTab">📓 Evidence (${machineEvidenceCount(machine.id)})</button>
+            <button class="tab" id="openDocumentationTab">📄 Documentation</button>
+            <button class="tab" id="openAiDocumentationTab">🤖 AI Penetration Testing</button>
             <button class="tab" id="openNotesModalTab">📝 Notes</button>
           </div>
           ${state.ui.machineTab === 'checklist' ? `
@@ -1910,11 +1914,287 @@ function showDialogSafely(modal) {
    are destroyed on re-render.
    ─────────────────────────────────────────────── */
 
-/** Wire dashboard page: Add Machine button, delete machine, machine card clicks, and Reset. */
+/* ── XML Import / Export ─────────────────────── */
+
+/** Escape special XML characters in a string value. */
+function xmlEsc(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Convert a JS value to an XML string representation. */
+function valueToXml(val, indent) {
+  if (val === null || val === undefined) return `${indent}<null/>`;
+  if (typeof val === 'boolean') return `${indent}<boolean>${val}</boolean>`;
+  if (typeof val === 'number') return `${indent}<number>${val}</number>`;
+  if (typeof val === 'string') return `${indent}<string>${xmlEsc(val)}</string>`;
+  if (Array.isArray(val)) {
+    if (val.length === 0) return `${indent}<array/>`;
+    const items = val.map(item => `${indent}  <item>\n${valueToXml(item, indent + '    ')}\n${indent}  </item>`).join('\n');
+    return `${indent}<array>\n${items}\n${indent}</array>`;
+  }
+  if (typeof val === 'object') {
+    const keys = Object.keys(val);
+    if (keys.length === 0) return `${indent}<object/>`;
+    const entries = keys.map(k => `${indent}  <entry key="${xmlEsc(k)}">\n${valueToXml(val[k], indent + '    ')}\n${indent}  </entry>`).join('\n');
+    return `${indent}<object>\n${entries}\n${indent}</object>`;
+  }
+  return `${indent}<string>${xmlEsc(String(val))}</string>`;
+}
+
+/** Parse an XML element back into a JS value. */
+function xmlToValue(el) {
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'null') return null;
+  if (tag === 'boolean') return el.textContent.trim() === 'true';
+  if (tag === 'number') return Number(el.textContent.trim());
+  if (tag === 'string') return el.textContent;
+  if (tag === 'array') {
+    const items = Array.from(el.children).filter(c => c.tagName.toLowerCase() === 'item');
+    return items.map(item => {
+      const child = item.children[0];
+      return child ? xmlToValue(child) : null;
+    });
+  }
+  if (tag === 'object') {
+    const obj = {};
+    Array.from(el.children).filter(c => c.tagName.toLowerCase() === 'entry').forEach(entry => {
+      const key = entry.getAttribute('key');
+      const child = entry.children[0];
+      obj[key] = child ? xmlToValue(child) : null;
+    });
+    return obj;
+  }
+  return el.textContent;
+}
+
+/**
+ * Export all application state + evidence blobs to an XML file and download it.
+ * Evidence files are base64-encoded inline so the export is fully portable.
+ */
+async function exportToXml() {
+  const statusEl = document.getElementById('exportXmlBtn');
+  const origLabel = statusEl ? statusEl.textContent : '';
+  try {
+    if (statusEl) { statusEl.textContent = '⏳ Exporting...'; statusEl.disabled = true; }
+
+    /* Collect all evidence IDs referenced in machine item_evidence */
+    const evidenceIds = new Set();
+    for (const machine of state.machines) {
+      if (machine.item_evidence) {
+        for (const entries of Object.values(machine.item_evidence)) {
+          for (const entry of (entries || [])) {
+            if (entry.id) evidenceIds.add(entry.id);
+          }
+        }
+      }
+      for (const entry of (machine.archived_evidence || [])) {
+        if (entry.id) evidenceIds.add(entry.id);
+      }
+    }
+    /* Also collect evidence from findings */
+    for (const finding of state.findings) {
+      for (const entry of (finding.evidence || [])) {
+        if (entry.id) evidenceIds.add(entry.id);
+      }
+    }
+
+    /* Read evidence blobs from IndexedDB and base64-encode them */
+    let evidenceXml = '';
+    for (const id of evidenceIds) {
+      try {
+        const record = await getEvidenceFile(id);
+        if (record && record.blob) {
+          const buffer = await record.blob.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          const b64 = btoa(binary);
+          evidenceXml += `    <evidence id="${xmlEsc(record.id)}" name="${xmlEsc(record.name)}" type="${xmlEsc(record.type)}" size="${record.size}">\n      ${b64}\n    </evidence>\n`;
+        }
+      } catch { /* skip unreadable evidence */ }
+    }
+
+    /* Build the complete XML */
+    const statePayload = {
+      machines: state.machines,
+      credentials: state.credentials,
+      findings: state.findings,
+      activities: state.activities,
+    };
+
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<SecurityTrackerExport version="1" exported="' + xmlEsc(nowStamp()) + '">\n';
+    xml += '  <state>\n' + valueToXml(statePayload, '    ') + '\n  </state>\n';
+    if (evidenceXml) {
+      xml += '  <evidenceStore>\n' + evidenceXml + '  </evidenceStore>\n';
+    }
+    xml += '</SecurityTrackerExport>\n';
+
+    /* Download */
+    const blob = new Blob([xml], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.download = `security-tracker-export-${dateStr}.xml`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    if (statusEl) { statusEl.textContent = '✓ Exported!'; setTimeout(() => { statusEl.textContent = origLabel; statusEl.disabled = false; }, 2000); }
+  } catch (err) {
+    console.error('Export failed:', err);
+    if (statusEl) { statusEl.textContent = origLabel; statusEl.disabled = false; }
+    alert('Export failed: ' + err.message);
+  }
+}
+
+/**
+ * Import state + evidence from an XML file.
+ * Prompts user to merge with or replace existing data.
+ */
+async function importFromXml(file) {
+  try {
+    const text = await file.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, 'application/xml');
+
+    /* Check for parse errors */
+    const parseError = doc.querySelector('parsererror');
+    if (parseError) throw new Error('Invalid XML file');
+
+    const root = doc.documentElement;
+    if (root.tagName !== 'SecurityTrackerExport') throw new Error('Not a Security Tracker export file');
+
+    /* Parse state */
+    const stateEl = root.querySelector(':scope > state');
+    if (!stateEl) throw new Error('No state data found in XML');
+    const stateChild = stateEl.children[0];
+    if (!stateChild) throw new Error('Empty state data');
+    const imported = xmlToValue(stateChild);
+
+    const importedMachines = imported.machines || [];
+    const importedCredentials = imported.credentials || [];
+    const importedFindings = imported.findings || [];
+    const importedActivities = imported.activities || [];
+
+    if (importedMachines.length === 0) {
+      alert('No machines found in the XML file.');
+      return;
+    }
+
+    /* Ask user: merge or replace */
+    let mode = 'replace';
+    if (state.machines.length > 0) {
+      const choice = confirm(
+        `Found ${importedMachines.length} machine(s) in the XML file.\n\n` +
+        `You currently have ${state.machines.length} machine(s).\n\n` +
+        `OK = Replace all current data\nCancel = Cancel import`
+      );
+      if (!choice) return;
+    }
+
+    /* Replace state data */
+    state.machines = importedMachines.map(m => ({
+      ...m,
+      selected_ports: m.selected_ports || [],
+      completed_items: m.completed_items || [],
+      item_notes: m.item_notes || {},
+      item_evidence: m.item_evidence || {},
+      archived_evidence: m.archived_evidence || [],
+      archived_credentials: m.archived_credentials || [],
+    }));
+    state.credentials = importedCredentials.map(c => ({
+      ...c,
+      finding_id: c.finding_id || null,
+      created_at: c.created_at || nowStamp(),
+    }));
+    state.findings = importedFindings.map(f => ({
+      ...f,
+      evidence: f.evidence || [],
+      phase: f.phase || 'osint',
+      severity: f.severity || 'info',
+      category: f.category || 'finding',
+      parent_id: f.parent_id || null,
+      source_checklist_item_id: f.source_checklist_item_id || null,
+      created_at: f.created_at || nowStamp(),
+      updated_at: f.updated_at || f.created_at || nowStamp(),
+    }));
+    state.activities = importedActivities;
+    state.reveal = {};
+
+    /* Restore evidence blobs to IndexedDB */
+    const evidenceStoreEl = root.querySelector(':scope > evidenceStore');
+    if (evidenceStoreEl) {
+      await clearEvidenceStore();
+      const evidenceEls = evidenceStoreEl.querySelectorAll(':scope > evidence');
+      for (const evEl of evidenceEls) {
+        try {
+          const id = evEl.getAttribute('id');
+          const name = evEl.getAttribute('name') || 'unknown';
+          const type = evEl.getAttribute('type') || 'application/octet-stream';
+          const b64 = evEl.textContent.trim();
+          if (!b64) continue;
+
+          const binary = atob(b64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type });
+
+          const database = await openEvidenceDb();
+          await new Promise((resolve, reject) => {
+            const tx = database.transaction(EVIDENCE_STORE_NAME, 'readwrite');
+            tx.objectStore(EVIDENCE_STORE_NAME).put({
+              id,
+              blob,
+              name,
+              type,
+              size: bytes.length,
+              created_at: nowStamp(),
+            });
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (evErr) {
+          console.warn('Failed to restore evidence:', evErr);
+        }
+      }
+    }
+
+    persist();
+    addActivity('imported_data', `Imported ${importedMachines.length} machine(s) from XML`, '');
+    mount();
+    alert(`Successfully imported ${importedMachines.length} machine(s).`);
+  } catch (err) {
+    console.error('Import failed:', err);
+    alert('Import failed: ' + err.message);
+  }
+}
+
+/** Wire dashboard page: Add Machine button, delete machine, machine card clicks, Reset, Import/Export. */
 function wireDashboard() {
   document.getElementById('openMachineModal')?.addEventListener('click', () => {
     fillMachineSelect();
     showDialogSafely(document.getElementById('machineModal'));
+  });
+
+  /* ── XML Export ── */
+  document.getElementById('exportXmlBtn')?.addEventListener('click', () => exportToXml());
+
+  /* ── XML Import ── */
+  const importBtn = document.getElementById('importXmlBtn');
+  const importInput = document.getElementById('xmlImportInput');
+  importBtn?.addEventListener('click', () => importInput?.click());
+  importInput?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) importFromXml(file);
+    e.target.value = '';   // reset so same file can be re-imported
   });
 
   document.getElementById('resetMachinesBtn')?.addEventListener('click', async () => {
@@ -2623,6 +2903,8 @@ function wireMachineDetail(machine) {
   document.getElementById('openCredModalTab')?.addEventListener('click', () => openCredAllModal(machine));
   document.getElementById('openFindingsModalTab')?.addEventListener('click', () => openFindingsModal(machine));
   document.getElementById('openEvidenceModalTab')?.addEventListener('click', () => openEvidenceModal(machine));
+  document.getElementById('openDocumentationTab')?.addEventListener('click', () => openDocsModal());
+  document.getElementById('openAiDocumentationTab')?.addEventListener('click', () => openAiDocsModal());
   document.getElementById('openNotesModalTab')?.addEventListener('click', () => openNotesModal(machine));
 
   document.getElementById('backToDashboard').addEventListener('click', () => {
@@ -5003,6 +5285,314 @@ function openFindingEditModal(findingId) {
 function fillMachineSelect() {
   const select = document.getElementById('credMachineSelect');
   select.innerHTML = '<option value="">Select machine</option>' + state.machines.map((machine) => `<option value="${machine.id}">${machine.ip}${machine.hostname ? ` (${machine.hostname})` : ''}</option>`).join('');
+}
+
+/* ═══════════════════════════════════════════════
+   Documentation Modal
+   ═══════════════════════════════════════════════ */
+
+/**
+ * Render a single documentation entry into readable HTML.
+ */
+function renderDocContent(doc) {
+  let sectionIndex = 0;
+  return doc.sections.map(s => {
+    let html = '';
+    if (s.heading) {
+      const tag = s.level === 3 ? 'h3' : 'h2';
+      const anchorId = 'doc-sec-' + sectionIndex++;
+      html += `<${tag} class="doc-section-heading" id="${anchorId}">${escapeHtml(s.heading)}</${tag}>`;
+    }
+    if (s.content) {
+      html += s.content.split('\n\n').map(p =>
+        `<p class="doc-paragraph">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+      ).join('');
+    }
+    if (s.code) {
+      if (s.copyable) {
+        html += `<div class="doc-code-wrapper">`;
+        html += `<button class="doc-code-copy-btn" title="Copy to clipboard">📋 Copy</button>`;
+        html += `<pre class="doc-code"><code>${escapeHtml(s.code)}</code></pre>`;
+        html += `</div>`;
+      } else {
+        html += `<pre class="doc-code"><code>${escapeHtml(s.code)}</code></pre>`;
+      }
+    }
+    if (s.list && s.list.length) {
+      const tag = s.numbered ? 'ol' : 'ul';
+      html += `<${tag} class="doc-list">${s.list.map(li => `<li>${escapeHtml(li)}</li>`).join('')}</${tag}>`;
+    }
+    return html;
+  }).join('');
+}
+
+function buildDocToc(doc) {
+  let idx = 0;
+  return (doc.sections || [])
+    .filter(s => s.heading)
+    .map(s => {
+      const anchorId = 'doc-sec-' + idx++;
+      const indent = s.level === 3 ? ' docs-toc-sub' : '';
+      return `<a href="#" class="docs-toc-link${indent}" data-target="${anchorId}">${escapeHtml(s.heading)}</a>`;
+    }).join('');
+}
+
+function wireDocTocScrollSpyIn(rootEl) {
+  const contentArea = rootEl.querySelector('.docs-content-body');
+  const tocLinks = rootEl.querySelectorAll('.docs-toc-link');
+  if (!contentArea || !tocLinks.length) return;
+
+  tocLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = contentArea.querySelector('#' + link.dataset.target);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  const headings = Array.from(contentArea.querySelectorAll('.doc-section-heading[id]'));
+  const headingOffsets = headings.map(h => ({ id: h.id, top: h.offsetTop }));
+  let activeId = '';
+  let scrollRaf = null;
+
+  function applyActive(id) {
+    if (id === activeId) return;
+    activeId = id;
+    tocLinks.forEach((link) => {
+      link.classList.toggle('active', link.dataset.target === id);
+    });
+  }
+
+  function updateActiveFromScroll() {
+    const top = contentArea.scrollTop + 40;
+    let currentId = headingOffsets[0]?.id || '';
+    for (let i = 0; i < headingOffsets.length; i++) {
+      if (headingOffsets[i].top <= top) currentId = headingOffsets[i].id;
+      else break;
+    }
+    applyActive(currentId);
+    scrollRaf = null;
+  }
+
+  contentArea.addEventListener('scroll', () => {
+    if (scrollRaf !== null) return;
+    scrollRaf = requestAnimationFrame(updateActiveFromScroll);
+  }, { passive: true });
+
+  updateActiveFromScroll();
+}
+
+/** Simple HTML escaper for doc content. */
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/**
+ * Open the Documentation modal.
+ * Shows a list of all docs; clicking one shows its content.
+ */
+function openDocsModal(preselectedId) {
+  const modal = document.getElementById('docsModal');
+  const container = document.getElementById('docsModalContent');
+
+  function renderDocsList() {
+    const noteEntries = documentationEntries.map((doc, index) => ({ ...doc, navId: `docs-note-${index}` }));
+
+    container.innerHTML = `
+      <div class="docs-header">
+        <h2>Documentation</h2>
+        <button class="btn btn-ghost docs-close-btn" id="docsCloseBtn">✕</button>
+      </div>
+      <div class="docs-list-layout">
+        <div class="docs-grid docs-grid-main">
+          <div class="docs-card-list docs-card-list-main">
+            ${noteEntries.map(doc => `
+              <button class="docs-card" id="${doc.navId}" data-doc-id="${doc.id}">
+                <span class="docs-card-icon">${doc.icon}</span>
+                <span class="docs-card-title">${doc.title}</span>
+                <span class="docs-card-arrow">→</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+        <nav class="docs-list-nav">
+          <div class="docs-list-nav-title">Notes</div>
+          ${noteEntries.map(doc => `
+            <a href="#" class="docs-list-nav-link" data-target="${doc.navId}">${doc.icon} ${escapeHtml(doc.title)}</a>
+          `).join('')}
+        </nav>
+      </div>
+    `;
+
+    container.querySelector('#docsCloseBtn').addEventListener('click', () => modal.close());
+    const listPane = container.querySelector('.docs-grid-main');
+    container.querySelectorAll('.docs-list-nav-link').forEach(link => {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        const target = container.querySelector('#' + link.dataset.target);
+        if (!target) return;
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        container.querySelectorAll('.docs-list-nav-link').forEach((l) => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+    if (listPane && container.querySelector('.docs-list-nav-link')) {
+      container.querySelector('.docs-list-nav-link').classList.add('active');
+    }
+    container.querySelectorAll('.docs-card').forEach(card => {
+      card.addEventListener('click', () => renderDocView(card.dataset.docId));
+    });
+  }
+
+  function renderDocView(docId) {
+    const doc = documentationEntries.find(d => d.id === docId);
+    if (!doc) return;
+
+    container.innerHTML = `
+      <div class="docs-header">
+        <div class="docs-header-left">
+          <button class="btn btn-ghost docs-back-btn" id="docsBackBtn">← Back</button>
+          <h2>${doc.icon} ${doc.title}</h2>
+        </div>
+        <button class="btn btn-ghost docs-close-btn" id="docsCloseBtn">✕</button>
+      </div>
+      <div class="docs-view-layout">
+        <div class="docs-content-body">
+          ${renderDocContent(doc)}
+        </div>
+        <nav class="docs-toc">
+          <div class="docs-toc-title">On this page</div>
+          ${buildDocToc(doc)}
+        </nav>
+      </div>
+    `;
+
+    container.querySelector('#docsCloseBtn').addEventListener('click', () => modal.close());
+    container.querySelector('#docsBackBtn').addEventListener('click', () => renderDocsList());
+    wireDocTocScrollSpyIn(container);
+    wireDocCodeCopyButtons(container);
+  }
+
+  if (preselectedId) {
+    renderDocView(preselectedId);
+  } else {
+    renderDocsList();
+  }
+
+  showDialogSafely(modal);
+}
+
+/** Wire click handlers for .doc-code-copy-btn buttons inside a root element. */
+function wireDocCodeCopyButtons(rootEl) {
+  rootEl.querySelectorAll('.doc-code-copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const codeEl = btn.closest('.doc-code-wrapper')?.querySelector('code');
+      if (!codeEl) return;
+      try {
+        await navigator.clipboard.writeText(codeEl.textContent);
+        const original = btn.textContent;
+        btn.textContent = '✅ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 2000);
+      } catch { /* clipboard blocked */ }
+    });
+  });
+}
+
+/**
+ * Open the AI Penetration Testing modal.
+ * Shows a list of AI pentesting notes; clicking one shows its content.
+ */
+function openAiDocsModal(preselectedId) {
+  const modal = document.getElementById('aiDocsModal');
+  const container = document.getElementById('aiDocsModalContent');
+  const entries = Array.isArray(aiDocumentationEntries) ? aiDocumentationEntries : [];
+
+  function renderDocsList() {
+    const noteEntries = entries.map((doc, index) => ({ ...doc, navId: `ai-docs-note-${index}` }));
+
+    container.innerHTML = `
+      <div class="docs-header">
+        <h2>AI Penetration Testing</h2>
+        <button class="btn btn-ghost docs-close-btn" id="aiDocsCloseBtn">✕</button>
+      </div>
+      <div class="docs-list-layout">
+        <div class="docs-grid docs-grid-main">
+          <div class="docs-card-list docs-card-list-main">
+            ${noteEntries.map(doc => `
+              <button class="docs-card" id="${doc.navId}" data-doc-id="${doc.id}">
+                <span class="docs-card-icon">${doc.icon}</span>
+                <span class="docs-card-title">${doc.title}</span>
+                <span class="docs-card-arrow">→</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+        <nav class="docs-list-nav">
+          <div class="docs-list-nav-title">Notes</div>
+          ${noteEntries.map(doc => `
+            <a href="#" class="docs-list-nav-link" data-target="${doc.navId}">${doc.icon} ${escapeHtml(doc.title)}</a>
+          `).join('')}
+        </nav>
+      </div>
+    `;
+
+    container.querySelector('#aiDocsCloseBtn').addEventListener('click', () => modal.close());
+    const listPane = container.querySelector('.docs-grid-main');
+    container.querySelectorAll('.docs-list-nav-link').forEach(link => {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        const target = container.querySelector('#' + link.dataset.target);
+        if (!target) return;
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        container.querySelectorAll('.docs-list-nav-link').forEach((l) => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+    if (listPane && container.querySelector('.docs-list-nav-link')) {
+      container.querySelector('.docs-list-nav-link').classList.add('active');
+    }
+    container.querySelectorAll('.docs-card').forEach(card => {
+      card.addEventListener('click', () => renderDocView(card.dataset.docId));
+    });
+  }
+
+  function renderDocView(docId) {
+    const doc = entries.find(d => d.id === docId);
+    if (!doc) return;
+
+    container.innerHTML = `
+      <div class="docs-header">
+        <div class="docs-header-left">
+          <button class="btn btn-ghost docs-back-btn" id="aiDocsBackBtn">← Back</button>
+          <h2>${doc.icon} ${doc.title}</h2>
+        </div>
+        <button class="btn btn-ghost docs-close-btn" id="aiDocsCloseBtn">✕</button>
+      </div>
+      <div class="docs-view-layout">
+        <div class="docs-content-body">
+          ${renderDocContent(doc)}
+        </div>
+        <nav class="docs-toc">
+          <div class="docs-toc-title">On this page</div>
+          ${buildDocToc(doc)}
+        </nav>
+      </div>
+    `;
+
+    container.querySelector('#aiDocsCloseBtn').addEventListener('click', () => modal.close());
+    container.querySelector('#aiDocsBackBtn').addEventListener('click', () => renderDocsList());
+    wireDocTocScrollSpyIn(container);
+    wireDocCodeCopyButtons(container);
+  }
+
+  if (preselectedId) {
+    renderDocView(preselectedId);
+  } else {
+    renderDocsList();
+  }
+
+  showDialogSafely(modal);
 }
 
 /* ───────────────────────────────────────────────
