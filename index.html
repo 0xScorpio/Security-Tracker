@@ -103,6 +103,9 @@
 		</main>
 	</div>
 
+	<!-- Hidden file input for XML import -->
+	<input type="file" id="xmlImportInput" accept=".xml" style="display:none" />
+
 	<!-- ============ DIALOG MODALS ============ -->
 
 	<!-- Add / Edit target machine -->
@@ -236,6 +239,20 @@
 		</div>
 	</dialog>
 
+	<!-- Documentation modal -->
+	<dialog class="modal docs-modal" id="docsModal">
+		<div class="modal-card docs-modal-card" id="docsModalContent">
+			<!-- populated by JS (documentation viewer) -->
+		</div>
+	</dialog>
+
+	<!-- AI Penetration Testing modal -->
+	<dialog class="modal docs-modal" id="aiDocsModal">
+		<div class="modal-card docs-modal-card" id="aiDocsModalContent">
+			<!-- populated by JS (AI penetration testing viewer) -->
+		</div>
+	</dialog>
+
 	<!-- Mind-map fullscreen modal (pan/zoom workspace) -->
 	<dialog class="modal mm-fs-modal" id="mindmapFsModal">
 		<div class="mm-fs-wrap">
@@ -276,6 +293,12 @@
 
 	<!-- Application data (checklist phases, normalizers) -->
 	<script src="data.js"></script>
+
+	<!-- Documentation data (doc entries for the Documentation modal) -->
+	<script src="docs.js"></script>
+
+	<!-- AI documentation data (Practical AI Pentest Associate modal) -->
+	<script src="ai_docs.js"></script>
 
 	<!-- Core application logic (state, routing, rendering, event wiring) -->
 	<script src="app.js"></script>
