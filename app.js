@@ -1173,11 +1173,13 @@ function renderChecklist(machine) {
                       ${item.description ? `<div class="small dim" style="margin:.3rem 0 .15rem 1.75rem;line-height:1.45">${item.description}</div>` : ''}
                       ${item.commands ? item.commands.map((c, ci) => `
                         <div class="cmd-sub-desc cmd-sub-desc-main">${c.desc}</div>
-                        ${c.subdesc ? `<div class="cmd-sub-desc cmd-sub-desc-sub">${c.subdesc}</div>` : ''}
-                        <div class="cmd-block mt-2">
-                          <pre>${substituteTargetIp(c.cmd, machine.ip).replace(/</g, '&lt;')}</pre>
-                          <button class="cmd-copy" data-copy-raw-idx="${item.id}__${ci}">Copy</button>
-                        </div>
+                        ${c.entries.map((e, ei) => `
+                          ${e.subdesc ? `<div class="cmd-sub-desc cmd-sub-desc-sub">${e.subdesc}</div>` : ''}
+                          <div class="cmd-block mt-2">
+                            <pre>${substituteTargetIp(e.cmd, machine.ip).replace(/</g, '&lt;')}</pre>
+                            <button class="cmd-copy" data-copy-raw-idx="${item.id}__${ci}__${ei}">Copy</button>
+                          </div>
+                        `).join('')}
                       `).join('') : item.command ? `
                         <div class="cmd-block mt-2 text-xs">
                           <pre>${substituteTargetIp(item.command, machine.ip).replace(/</g, '&lt;')}</pre>
@@ -3065,6 +3067,9 @@ function wireChecklist(machine) {
         .split(',')
         .map(id => id.trim())
         .filter(Boolean);
+      /* Restore / highlight button text */
+      const item0 = itemIds.length ? checklistItemById(itemIds[0]) : null;
+      if (item0) btn.innerHTML = q ? highlightMatch(escapeHtml(item0.name), q) : escapeHtml(item0.name);
       if (!q) { btn.style.display = ''; return; }
       const searchItems = itemIds
         .map((id) => checklistItemById(id))
@@ -3074,7 +3079,7 @@ function wireChecklist(machine) {
         item.name || '',
         item.description || '',
         item.command || '',
-        ...(item.commands || []).map(c => (c.cmd || '') + ' ' + (c.desc || '') + ' ' + (c.subdesc || '')),
+        ...(item.commands || []).flatMap(c => [c.desc || '', ...(c.entries || []).map(e => (e.cmd || '') + ' ' + (e.subdesc || ''))]),
       ].join(' ')).join(' ').toLowerCase();
       btn.style.display = haystack.includes(q) ? '' : 'none';
     });
@@ -3087,11 +3092,22 @@ function wireChecklist(machine) {
       /* Auto-expand groups with matches */
       if (q && anyVisible) sublist.style.display = 'block';
     });
-    /* Filter main checklist items */
+    /* Filter main checklist items + highlight */
     document.querySelectorAll('.check-item').forEach(el => {
-      if (!q) { el.style.display = ''; return; }
+      if (!q) {
+        el.style.display = '';
+        /* Clear any previous highlights */
+        el.querySelectorAll('mark.search-hl').forEach(m => {
+          const parent = m.parentNode;
+          parent.replaceChild(document.createTextNode(m.textContent), m);
+          parent.normalize();
+        });
+        return;
+      }
       const text = el.textContent.toLowerCase();
-      el.style.display = text.includes(q) ? '' : 'none';
+      const visible = text.includes(q);
+      el.style.display = visible ? '' : 'none';
+      if (visible) applyHighlightsInEl(el, q);
     });
     /* Hide phase accordions with no visible items */
     document.querySelectorAll('.accordion-item').forEach(acc => {
@@ -3238,10 +3254,13 @@ function wireChecklist(machine) {
     button.addEventListener('click', async () => {
       let text;
       if (button.dataset.copyRawIdx !== undefined) {
-        const [itemId, idxStr] = button.dataset.copyRawIdx.split('__');
+        const parts = button.dataset.copyRawIdx.split('__');
+        const itemId = parts[0];
+        const ci = parseInt(parts[1], 10);
+        const ei = parseInt(parts[2], 10);
         const item = machinePhases.flatMap((phase) => phase.items).find((entry) => entry.id === itemId);
         if (!item || !item.commands) return;
-        text = substituteTargetIp(item.commands[parseInt(idxStr, 10)].cmd, machine.ip);
+        text = substituteTargetIp(item.commands[ci].entries[ei].cmd, machine.ip);
       } else {
         const item = machinePhases.flatMap((phase) => phase.items).find((entry) => entry.id === button.dataset.copyCmd);
         if (!item) return;
@@ -5387,6 +5406,51 @@ function escapeHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+/** Wrap every occurrence of `query` inside `text` with <mark>. Both are plain strings. */
+function highlightMatch(text, query) {
+  if (!query) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark class="search-hl">$1</mark>');
+}
+
+/** Apply / clear highlights inside a DOM tree. Walks text nodes so tags stay intact. */
+function applyHighlightsInEl(root, query) {
+  /* Remove old marks first */
+  root.querySelectorAll('mark.search-hl').forEach(m => {
+    const parent = m.parentNode;
+    parent.replaceChild(document.createTextNode(m.textContent), m);
+    parent.normalize();
+  });
+  if (!query) return;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(${escaped})`, 'gi');
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const hits = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.parentElement && node.parentElement.closest('pre, code, .doc-code-wrapper, button, input, .docs-toc, .docs-list-nav')) continue;
+    if (re.test(node.nodeValue)) hits.push(node);
+    re.lastIndex = 0;
+  }
+  hits.forEach(node => {
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    node.nodeValue.replace(re, (match, _p1, offset) => {
+      if (offset > last) frag.appendChild(document.createTextNode(node.nodeValue.slice(last, offset)));
+      const mark = document.createElement('mark');
+      mark.className = 'search-hl';
+      mark.textContent = match;
+      frag.appendChild(mark);
+      last = offset + match.length;
+    });
+    if (last < node.nodeValue.length) frag.appendChild(document.createTextNode(node.nodeValue.slice(last)));
+    node.parentNode.replaceChild(frag, node);
+  });
+  /* Scroll first hit into view */
+  const first = root.querySelector('mark.search-hl');
+  if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 /**
  * Open the Documentation modal.
  * Shows a list of all docs; clicking one shows its content.
@@ -5401,7 +5465,10 @@ function openDocsModal(preselectedId) {
     container.innerHTML = `
       <div class="docs-header">
         <h2>Documentation</h2>
-        <button class="btn btn-ghost docs-close-btn" id="docsCloseBtn">✕</button>
+        <div class="docs-header-right">
+          <input type="text" class="docs-search-input" id="docsListSearch" placeholder="Search documentation…" autocomplete="off">
+          <button class="btn btn-ghost docs-close-btn" id="docsCloseBtn">✕</button>
+        </div>
       </div>
       <div class="docs-list-layout">
         <div class="docs-grid docs-grid-main">
@@ -5409,7 +5476,7 @@ function openDocsModal(preselectedId) {
             ${noteEntries.map(doc => `
               <button class="docs-card" id="${doc.navId}" data-doc-id="${doc.id}">
                 <span class="docs-card-icon">${doc.icon}</span>
-                <span class="docs-card-title">${doc.title}</span>
+                <span class="docs-card-title">${escapeHtml(doc.title)}</span>
                 <span class="docs-card-arrow">→</span>
               </button>
             `).join('')}
@@ -5442,6 +5509,24 @@ function openDocsModal(preselectedId) {
     container.querySelectorAll('.docs-card').forEach(card => {
       card.addEventListener('click', () => renderDocView(card.dataset.docId));
     });
+
+    /* Docs list search: filter cards & nav links, highlight titles */
+    const docsListSearchInput = container.querySelector('#docsListSearch');
+    docsListSearchInput?.addEventListener('input', () => {
+      const q = (docsListSearchInput.value || '').toLowerCase().trim();
+      noteEntries.forEach(doc => {
+        const card = container.querySelector('#' + doc.navId);
+        const navLink = container.querySelector(`.docs-list-nav-link[data-target="${doc.navId}"]`);
+        if (!card) return;
+        const haystack = (doc.title + ' ' + (doc.sections || []).map(s => (s.heading || '') + ' ' + (s.content || '') + ' ' + (s.code || '') + ' ' + (s.list || []).join(' ')).join(' ')).toLowerCase();
+        const visible = !q || haystack.includes(q);
+        card.style.display = visible ? '' : 'none';
+        if (navLink) navLink.style.display = visible ? '' : 'none';
+        /* Highlight title */
+        const titleEl = card.querySelector('.docs-card-title');
+        if (titleEl) titleEl.innerHTML = q ? highlightMatch(escapeHtml(doc.title), q) : escapeHtml(doc.title);
+      });
+    });
   }
 
   function renderDocView(docId) {
@@ -5454,7 +5539,10 @@ function openDocsModal(preselectedId) {
           <button class="btn btn-ghost docs-back-btn" id="docsBackBtn">← Back</button>
           <h2>${doc.icon} ${doc.title}</h2>
         </div>
-        <button class="btn btn-ghost docs-close-btn" id="docsCloseBtn">✕</button>
+        <div class="docs-header-right">
+          <input type="text" class="docs-search-input" id="docsContentSearch" placeholder="Search in this page…" autocomplete="off">
+          <button class="btn btn-ghost docs-close-btn" id="docsCloseBtn">✕</button>
+        </div>
       </div>
       <div class="docs-view-layout">
         <div class="docs-content-body">
@@ -5471,6 +5559,18 @@ function openDocsModal(preselectedId) {
     container.querySelector('#docsBackBtn').addEventListener('click', () => renderDocsList());
     wireDocTocScrollSpyIn(container);
     wireDocCodeCopyButtons(container);
+
+    /* In-page search with highlighting */
+    const contentSearch = container.querySelector('#docsContentSearch');
+    const contentBody = container.querySelector('.docs-content-body');
+    let searchDebounce = null;
+    contentSearch?.addEventListener('input', () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        const q = (contentSearch.value || '').trim();
+        applyHighlightsInEl(contentBody, q);
+      }, 200);
+    });
   }
 
   if (preselectedId) {
@@ -5514,7 +5614,10 @@ function openAiDocsModal(preselectedId) {
     container.innerHTML = `
       <div class="docs-header">
         <h2>AI Penetration Testing</h2>
-        <button class="btn btn-ghost docs-close-btn" id="aiDocsCloseBtn">✕</button>
+        <div class="docs-header-right">
+          <input type="text" class="docs-search-input" id="aiDocsListSearch" placeholder="Search AI docs…" autocomplete="off">
+          <button class="btn btn-ghost docs-close-btn" id="aiDocsCloseBtn">✕</button>
+        </div>
       </div>
       <div class="docs-list-layout">
         <div class="docs-grid docs-grid-main">
@@ -5522,7 +5625,7 @@ function openAiDocsModal(preselectedId) {
             ${noteEntries.map(doc => `
               <button class="docs-card" id="${doc.navId}" data-doc-id="${doc.id}">
                 <span class="docs-card-icon">${doc.icon}</span>
-                <span class="docs-card-title">${doc.title}</span>
+                <span class="docs-card-title">${escapeHtml(doc.title)}</span>
                 <span class="docs-card-arrow">→</span>
               </button>
             `).join('')}
@@ -5555,6 +5658,23 @@ function openAiDocsModal(preselectedId) {
     container.querySelectorAll('.docs-card').forEach(card => {
       card.addEventListener('click', () => renderDocView(card.dataset.docId));
     });
+
+    /* AI Docs list search: filter cards & nav links, highlight titles */
+    const aiDocsListSearch = container.querySelector('#aiDocsListSearch');
+    aiDocsListSearch?.addEventListener('input', () => {
+      const q = (aiDocsListSearch.value || '').toLowerCase().trim();
+      noteEntries.forEach(doc => {
+        const card = container.querySelector('#' + doc.navId);
+        const navLink = container.querySelector(`.docs-list-nav-link[data-target="${doc.navId}"]`);
+        if (!card) return;
+        const haystack = (doc.title + ' ' + (doc.sections || []).map(s => (s.heading || '') + ' ' + (s.content || '') + ' ' + (s.code || '') + ' ' + (s.list || []).join(' ')).join(' ')).toLowerCase();
+        const visible = !q || haystack.includes(q);
+        card.style.display = visible ? '' : 'none';
+        if (navLink) navLink.style.display = visible ? '' : 'none';
+        const titleEl = card.querySelector('.docs-card-title');
+        if (titleEl) titleEl.innerHTML = q ? highlightMatch(escapeHtml(doc.title), q) : escapeHtml(doc.title);
+      });
+    });
   }
 
   function renderDocView(docId) {
@@ -5567,7 +5687,10 @@ function openAiDocsModal(preselectedId) {
           <button class="btn btn-ghost docs-back-btn" id="aiDocsBackBtn">← Back</button>
           <h2>${doc.icon} ${doc.title}</h2>
         </div>
-        <button class="btn btn-ghost docs-close-btn" id="aiDocsCloseBtn">✕</button>
+        <div class="docs-header-right">
+          <input type="text" class="docs-search-input" id="aiDocsContentSearch" placeholder="Search in this page…" autocomplete="off">
+          <button class="btn btn-ghost docs-close-btn" id="aiDocsCloseBtn">✕</button>
+        </div>
       </div>
       <div class="docs-view-layout">
         <div class="docs-content-body">
@@ -5584,6 +5707,18 @@ function openAiDocsModal(preselectedId) {
     container.querySelector('#aiDocsBackBtn').addEventListener('click', () => renderDocsList());
     wireDocTocScrollSpyIn(container);
     wireDocCodeCopyButtons(container);
+
+    /* In-page search with highlighting */
+    const contentSearch = container.querySelector('#aiDocsContentSearch');
+    const contentBody = container.querySelector('.docs-content-body');
+    let searchDebounce = null;
+    contentSearch?.addEventListener('input', () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        const q = (contentSearch.value || '').trim();
+        applyHighlightsInEl(contentBody, q);
+      }, 200);
+    });
   }
 
   if (preselectedId) {
