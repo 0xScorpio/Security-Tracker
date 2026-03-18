@@ -1556,6 +1556,36 @@ th {
   border-color: rgba(124,58,237,.55);
 }
 
+/* ── Search highlight ────────────────────────── */
+mark.search-hl {
+  background: rgba(250, 204, 21, .35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ── Docs modal search bar ───────────────────── */
+.docs-header-right {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+.docs-search-input {
+  padding: .35rem .6rem;
+  font-size: .8rem;
+  background: rgba(15,19,32,.85);
+  border: 1px solid rgba(136,146,176,.15);
+  border-radius: .4rem;
+  color: var(--text);
+  outline: none;
+  transition: border-color .15s;
+  width: 220px;
+}
+.docs-search-input::placeholder { color: var(--dim); }
+.docs-search-input:focus {
+  border-color: rgba(124,58,237,.55);
+}
+
 .section-toc-list {
   margin-top: .35rem;
   display: flex;
