@@ -74,7 +74,7 @@ const defaultState = {
   ui: {
     sidebarCollapsed: false,
     mindmapMode: 'tree',
-    machineTab: 'checklist',
+    machineTab: 'notes',
     openPhases: ['recon'],
     showAddMachine: false,
     showAddGlobalCred: false,
@@ -83,6 +83,7 @@ const defaultState = {
     mmPhase: 'all',
     checklistTaskFilter: 'all',
     mmViewState: {},
+    activeNoteId: null,
   },
   reveal: {},
   machines: [],
@@ -139,6 +140,8 @@ function hydrateState() {
       item_evidence: machine.item_evidence || {},
       archived_evidence: machine.archived_evidence || [],
       archived_credentials: machine.archived_credentials || [],
+      note_tree: machine.note_tree || [],
+      phase_notes: machine.phase_notes || {},
     }));
     merged.findings = (merged.findings || []).map((finding) => ({
       ...finding,
@@ -254,6 +257,7 @@ let findingEvidenceBuffer = [];   // temp buffer for evidence during finding cre
 let mmResizeObserver = null;      // ResizeObserver watching the mind-map container
 let mmPanCleanup = null;          // teardown fn for the active pan/zoom listeners
 let mmFsMachineId = null;         // machine ID currently in fullscreen mind map, or null
+let persistTimer = null;          // debounce timer for persist()
 let mainScrollLockTop = 0;        // saved scroll top when modal locks scroll
 let mainScrollLockHandler = null; // event ref for the scroll-lock listener
 let isMainScrollLocked = false;   // whether main scroll is currently frozen
@@ -281,6 +285,12 @@ function releaseModalLocks() {
 /** Serialize the current state object to localStorage. */
 function persist() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+/** Debounced persist — batches rapid state changes into a single write. */
+function persistSoon() {
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => { persistTimer = null; persist(); }, 300);
 }
 
 /** Generate a short random ID with the given prefix (e.g. uid('m') → 'm4kx9z'). */
@@ -1099,8 +1109,6 @@ const PHASE_EMOJI = {
 function renderChecklist(machine) {
   const completedItems = machine.completed_items || [];
   const allPhases = checklistPhasesFor(machine);
-  const reconPorts = getReconPortOptions();
-  const selectedPorts = machine.selected_ports || [];
   const totalItems = getApplicableItems(machine).length;
   const taskFilter = state.ui.checklistTaskFilter || 'all';
   const phases = allPhases
@@ -1125,21 +1133,6 @@ function renderChecklist(machine) {
         </div>
         <div class="checklist-head-right">
           <span class="badge" style="border-color:rgba(16,185,129,.4);color:var(--green)">${completedItems.length} / ${totalItems} completed</span>
-        </div>
-      </div>
-      <div class="port-filter-wrap">
-        <div class="port-filter-header">
-          <span class="port-filter-icon">&#x1F6AA;</span>
-          <span class="port-filter-label">RECON PORTS</span>
-          <span class="port-filter-line"></span>
-        </div>
-        <div class="port-filter-card">
-          <div class="port-filter-list">
-            <button class="port-chip ${selectedPorts.length ? '' : 'active'}" data-port-filter="__all__" type="button">All</button>
-            ${reconPorts.map((port) => `
-              <button class="port-chip ${selectedPorts.includes(port) ? 'active' : ''}" data-port-filter="${port}" type="button">${port}</button>
-            `).join('')}
-          </div>
         </div>
       </div>
       <div class="checklist-list">
@@ -1337,7 +1330,7 @@ function renderFindingsTab(machine) {
       ${state.ui.showAddFinding ? `
         <div class="inline-form card">
           <label>Title *<input id="findingTitle" placeholder="Apache 2.4.49 Path Traversal"></label>
-          <label>Description<textarea id="findingDescription" rows="3" style="width:100%;margin-top:.4rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem"></textarea></label>
+          <label>Description<textarea id="findingDescription" rows="24" style="width:100%;margin-top:.4rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem"></textarea></label>
           <div class="split">
             <label>Severity
               <select id="findingSeverity">
@@ -1372,15 +1365,1091 @@ function renderFindingsTab(machine) {
   `;
 }
 
-/** Render the notes tab — a simple auto-saving textarea for per-machine notes. */
-function renderNotesTab(machine) {
+/* ═══════════════════════════════════════════════════════════════════════════
+   Pentest Notes Workspace (phase-based notes with rich editor)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Get the phase note content for a machine */
+function getPhaseNote(machine, phaseId) {
+  return (machine.phase_notes || {})[phaseId] || '';
+}
+
+/** Set the phase note content for a machine */
+function setPhaseNote(machine, phaseId, content) {
+  machine.phase_notes = machine.phase_notes || {};
+  machine.phase_notes[phaseId] = content;
+}
+
+/** Default H1 headers injected when a phase note is first loaded empty */
+const DEFAULT_PHASE_HEADERS = {
+  recon:             ['Port Enumeration', 'Web Enumeration'],
+  exploitation:      ['Public Exploits', 'Exploitation Attacks'],
+  post_exploitation: ['Post-Enumeration', 'Privilege Escalation'],
+};
+
+/**
+ * If the phase note is empty, populate it with default H1 headers.
+ * Returns the (possibly new) note content.
+ */
+function ensureDefaultHeaders(machine, phaseId) {
+  const existing = getPhaseNote(machine, phaseId);
+  if (existing.replace(/<[^>]*>/g, '').trim()) return existing;
+  const headers = DEFAULT_PHASE_HEADERS[phaseId];
+  if (!headers) return existing;
+  const html = headers.map(h => `<h1>${escapeHtml(h)}</h1><p><br></p>`).join('');
+  setPhaseNote(machine, phaseId, html);
+  persistSoon();
+  return html;
+}
+
+/**
+ * When a port is toggled ON, inject a ## Port XX header under
+ * the "Port Enumeration" H1 in the recon phase note (if not already present).
+ */
+function injectPortHeader(machine, port) {
+  let html = getPhaseNote(machine, 'recon');
+  /* Parse into a temporary DOM */
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  /* Check if an H2 "Port <port>" already exists */
+  const headings = tmp.querySelectorAll('h2');
+  for (const h of headings) {
+    if (h.textContent.trim() === `Port ${port}`) return;
+  }
+  /* Find the "Port Enumeration" H1 */
+  const h1s = tmp.querySelectorAll('h1');
+  let portEnumH1 = null;
+  for (const h of h1s) {
+    if (h.textContent.trim() === 'Port Enumeration') { portEnumH1 = h; break; }
+  }
+  if (!portEnumH1) return;
+  /* Find the insertion point: just before the next H1 (or end of content) */
+  let insertBefore = null;
+  let sibling = portEnumH1.nextElementSibling;
+  while (sibling) {
+    if (sibling.tagName === 'H1') { insertBefore = sibling; break; }
+    sibling = sibling.nextElementSibling;
+  }
+  /* Build the new H2 + empty paragraph */
+  const newH2 = document.createElement('h2');
+  newH2.textContent = `Port ${port}`;
+  const newP = document.createElement('p');
+  newP.innerHTML = '<br>';
+  if (insertBefore) {
+    tmp.insertBefore(newP, insertBefore);
+    tmp.insertBefore(newH2, newP);
+  } else {
+    tmp.appendChild(newH2);
+    tmp.appendChild(newP);
+  }
+  setPhaseNote(machine, 'recon', tmp.innerHTML);
+  persistSoon();
+}
+
+/** Extract a nested TOC from phase note HTML content */
+function extractHeadingToc(htmlContent) {
+  if (!htmlContent) return [];
+  const tmp = document.createElement('div');
+  tmp.innerHTML = htmlContent;
+  const headings = tmp.querySelectorAll('h1, h2, h3');
+  const items = [];
+  headings.forEach((h, i) => {
+    const level = parseInt(h.tagName[1], 10);
+    const text = h.textContent.trim();
+    if (text) items.push({ level, text, index: i });
+  });
+  return items;
+}
+
+/** Build the phase list sidebar HTML */
+function buildPhaseListHtml(machine) {
+  const phases = checklistPhaseCatalogForMachine(machine);
+  const activeId = state.ui.activeNoteId;
+  return phases.map(phase => {
+    const emoji = PHASE_EMOJI[phase.id] || '🔧';
+    const hasContent = !!(machine.phase_notes || {})[phase.id];
+    const isActive = phase.id === activeId;
+    let tocHtml = '';
+    if (isActive) {
+      const toc = extractHeadingToc(getPhaseNote(machine, phase.id));
+      if (toc.length) {
+        tocHtml = '<div class="toc-list">' + toc.map(h =>
+          `<button class="toc-item toc-level-${h.level}" data-toc-index="${h.index}" type="button">${escapeHtml(h.text)}</button>`
+        ).join('') + '</div>';
+      }
+    }
+    return `
+      <button class="note-tree-item${isActive ? ' active' : ''}" data-phase-note="${phase.id}" type="button">
+        <span class="note-icon">${emoji}</span>
+        <span class="note-label">${escapeHtml(phase.name)}</span>
+        ${hasContent ? '<span class="note-has-content">●</span>' : ''}
+      </button>
+      ${tocHtml}
+    `;
+  }).join('');
+}
+
+/** Render the full notes workspace (phase sidebar + editor) */
+function renderNotesWorkspace(machine) {
+  const phases = checklistPhaseCatalogForMachine(machine);
+  const activePhaseId = state.ui.activeNoteId;
+  const activePhase = activePhaseId ? phases.find(p => p.id === activePhaseId) : null;
+  const activeContent = activePhase ? ensureDefaultHeaders(machine, activePhase.id) : '';
+  const reconPorts = getReconPortOptions();
+  const selectedPorts = machine.selected_ports || [];
+
   return `
-    <div class="mt-4">
-      <h3 class="subhead">Machine Notes</h3>
-      <textarea id="machineNotes" rows="12" style="width:100%;margin-top:.5rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem" placeholder="Write your notes here...">${(machine.notes || '').replace(/</g, '&lt;')}</textarea>
-      <p class="small dim" style="margin-top:.4rem">Notes are auto-saved when you click away.</p>
+    <div class="port-filter-wrap">
+      <div class="port-filter-header">
+        <span class="port-filter-icon">&#x1F6AA;</span>
+        <span class="port-filter-label">RECON PORTS</span>
+        <span class="port-filter-line"></span>
+      </div>
+      <div class="port-filter-card">
+        <div class="port-filter-list">
+          ${reconPorts.length ? `
+            <button class="port-chip${!selectedPorts.length ? ' active' : ''}" data-port-select="__all__" type="button">All</button>
+            ${reconPorts.map(p => `<button class="port-chip${selectedPorts.includes(p) ? ' active' : ''}" data-port-select="${p}" type="button">${p}</button>`).join('')}
+          ` : '<span class="small dim">No ports discovered yet</span>'}
+        </div>
+      </div>
+    </div>
+    <div class="notes-workspace">
+      <div class="notes-editor">
+        ${activePhase ? `
+          <div class="notes-editor-header">
+            <div class="notes-editor-title">
+              <span>${PHASE_EMOJI[activePhase.id] || '🔧'} ${escapeHtml(activePhase.name)}</span>
+            </div>
+          </div>
+          <div class="notes-toolbar">
+            <button data-fmt="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+            <button data-fmt="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+            <button data-fmt="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+            <button data-fmt="strikeThrough" title="Strikethrough"><s>S</s></button>
+            <span class="tb-sep"></span>
+            <button data-fmt="formatBlock" data-val="H1" title="Heading 1">H1</button>
+            <button data-fmt="formatBlock" data-val="H2" title="Heading 2">H2</button>
+            <button data-fmt="formatBlock" data-val="H3" title="Heading 3">H3</button>
+            <span class="tb-sep"></span>
+            <button data-fmt="insertUnorderedList" title="Bullet list">• List</button>
+            <button data-fmt="insertOrderedList" title="Numbered list">1. List</button>
+            <span class="tb-sep"></span>
+            <button data-fmt="formatBlock" data-val="PRE" title="Code block">&lt;/&gt;</button>
+            <button id="notesInsertCollapsible" title="Collapsible code block">▶ &lt;/&gt;</button>
+            <button data-fmt="formatBlock" data-val="BLOCKQUOTE" title="Blockquote">❝</button>
+            <button data-fmt="insertHorizontalRule" title="Horizontal rule">―</button>
+            <span class="tb-sep"></span>
+            <button id="notesInsertLink" title="Insert link">🔗</button>
+          </div>
+          <div class="notes-editor-body" contenteditable="true" id="notesEditorBody" spellcheck="true" data-phase-id="${activePhase.id}">${activeContent}</div>
+        ` : `
+          <div class="notes-empty-state">
+            <span class="notes-empty-icon">📝</span>
+            <div>Select a phase to write notes</div>
+            <div class="small dim">Paste screenshots directly with Ctrl+V</div>
+          </div>
+        `}
+      </div>
     </div>
   `;
+}
+
+/** Wire event listeners for the notes workspace */
+function wireNotesWorkspace(machine) {
+  /* --- Select phase --- */
+  document.querySelectorAll('[data-phase-note]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const phaseId = btn.dataset.phaseNote;
+      saveActiveNoteContent(machine);
+      state.ui.activeNoteId = phaseId;
+      persist();
+      mount();
+    });
+  });
+
+  /* --- Rich text editor --- */
+  const editorBody = document.getElementById('notesEditorBody');
+  if (editorBody) {
+    /* ── Inject delete buttons on block elements (pre, blockquote, hr, img) ── */
+    function injectBlockDeleteButtons() {
+      /* Remove existing delete buttons first */
+      editorBody.querySelectorAll('.block-delete-btn').forEach(b => b.remove());
+      editorBody.querySelectorAll('.hr-wrapper, .img-wrapper').forEach(w => {
+        const child = w.firstElementChild;
+        if (child) w.replaceWith(child);
+        else w.remove();
+      });
+
+      /* Collapsible code blocks — delete button + toggle save */
+      editorBody.querySelectorAll('details.collapsible-code').forEach(details => {
+        /* Ensure summary is not editable */
+        const summary = details.querySelector('summary');
+        if (summary) summary.contentEditable = 'false';
+        const btn = document.createElement('button');
+        btn.className = 'block-delete-btn';
+        btn.type = 'button';
+        btn.contentEditable = 'false';
+        btn.textContent = '✕';
+        btn.title = 'Delete block';
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const p = document.createElement('p');
+          p.innerHTML = '<br>';
+          details.replaceWith(p);
+          const range = document.createRange();
+          range.selectNodeContents(p);
+          range.collapse(true);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          saveActiveNoteContent(machine);
+          setTimeout(() => injectBlockDeleteButtons(), 0);
+        });
+        details.appendChild(btn);
+        /* Save open/closed state on toggle */
+        details.addEventListener('toggle', () => {
+          saveActiveNoteContent(machine);
+        });
+      });
+
+      /* Code blocks & blockquotes — append button inside */
+      editorBody.querySelectorAll('pre:not(.collapsible-code pre), blockquote').forEach(block => {
+        const btn = document.createElement('button');
+        btn.className = 'block-delete-btn';
+        btn.type = 'button';
+        btn.contentEditable = 'false';
+        btn.textContent = '✕';
+        btn.title = 'Delete block';
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const p = document.createElement('p');
+          p.innerHTML = '<br>';
+          block.replaceWith(p);
+          const range = document.createRange();
+          range.selectNodeContents(p);
+          range.collapse(true);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          saveActiveNoteContent(machine);
+          setTimeout(() => injectBlockDeleteButtons(), 0);
+        });
+        block.appendChild(btn);
+      });
+
+      /* Horizontal rules — wrap in a div so we can position the button */
+      editorBody.querySelectorAll('hr').forEach(hr => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'hr-wrapper';
+        wrapper.contentEditable = 'false';
+        hr.replaceWith(wrapper);
+        wrapper.appendChild(hr);
+        const btn = document.createElement('button');
+        btn.className = 'block-delete-btn';
+        btn.type = 'button';
+        btn.textContent = '✕';
+        btn.title = 'Delete rule';
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const p = document.createElement('p');
+          p.innerHTML = '<br>';
+          wrapper.replaceWith(p);
+          saveActiveNoteContent(machine);
+          setTimeout(() => injectBlockDeleteButtons(), 0);
+        });
+        wrapper.appendChild(btn);
+      });
+
+      /* Images — wrap in a span so we can position the button */
+      editorBody.querySelectorAll('img').forEach(img => {
+        if (img.parentElement?.classList.contains('img-wrapper')) return;
+        const wrapper = document.createElement('span');
+        wrapper.className = 'img-wrapper';
+        img.replaceWith(wrapper);
+        wrapper.appendChild(img);
+        const btn = document.createElement('button');
+        btn.className = 'block-delete-btn';
+        btn.type = 'button';
+        btn.contentEditable = 'false';
+        btn.textContent = '✕';
+        btn.title = 'Delete image';
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const p = document.createElement('p');
+          p.innerHTML = '<br>';
+          wrapper.replaceWith(p);
+          saveActiveNoteContent(machine);
+          setTimeout(() => injectBlockDeleteButtons(), 0);
+        });
+        wrapper.appendChild(btn);
+      });
+    }
+
+    injectBlockDeleteButtons();
+    document.execCommand('defaultParagraphSeparator', false, 'p');
+
+    /* Toolbar formatting buttons */
+    document.querySelectorAll('[data-fmt]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cmd = btn.dataset.fmt;
+        const val = btn.dataset.val || null;
+        document.execCommand(cmd, false, val);
+        editorBody.focus();
+        setTimeout(() => injectBlockDeleteButtons(), 0);
+      });
+    });
+
+    /* Insert collapsible code block */
+    document.getElementById('notesInsertCollapsible')?.addEventListener('click', () => {
+      const details = document.createElement('details');
+      details.className = 'collapsible-code';
+      const summary = document.createElement('summary');
+      summary.textContent = 'Code';
+      summary.contentEditable = 'false';
+      const pre = document.createElement('pre');
+      pre.innerHTML = '<br>';
+      details.appendChild(summary);
+      details.appendChild(pre);
+      const sel = window.getSelection();
+      if (sel.rangeCount) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(details);
+        /* Place cursor inside the pre */
+        const newRange = document.createRange();
+        newRange.selectNodeContents(pre);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      }
+      editorBody.focus();
+      saveActiveNoteContent(machine);
+      setTimeout(() => injectBlockDeleteButtons(), 0);
+    });
+
+    /* Insert link button */
+    document.getElementById('notesInsertLink')?.addEventListener('click', () => {
+      const url = prompt('Enter URL:');
+      if (url) {
+        document.execCommand('createLink', false, url);
+        editorBody.focus();
+      }
+    });
+
+    /* Paste handler — support pasting images directly */
+    editorBody.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const blob = item.getAsFile();
+          if (!blob) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const img = document.createElement('img');
+            img.src = reader.result;
+            img.alt = 'Screenshot';
+            const sel = window.getSelection();
+            if (sel.rangeCount) {
+              const range = sel.getRangeAt(0);
+              range.deleteContents();
+              range.insertNode(img);
+              range.setStartAfter(img);
+              range.collapse(true);
+              sel.removeAllRanges();
+              sel.addRange(range);
+            } else {
+              editorBody.appendChild(img);
+            }
+            saveActiveNoteContent(machine);
+            setTimeout(() => injectBlockDeleteButtons(), 0);
+          };
+          reader.readAsDataURL(blob);
+          return;
+        }
+      }
+    });
+
+    /* ── Keyboard handling for code blocks ── */
+
+    /* Detect # / ## / ### typed at the start of a line → convert to heading (Notion-style) */
+    editorBody.addEventListener('input', () => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const node = sel.anchorNode;
+      if (!node || node.nodeType !== Node.TEXT_NODE) return;
+      if (node.parentElement?.closest('pre, code')) return;
+      const text = node.textContent;
+      const match = text.match(/^(#{1,3})\s/);
+      if (!match) return;
+      const level = match[1].length;
+      const tag = 'H' + level;
+      const remaining = text.slice(match[0].length);
+      const parentBlock = node.parentElement?.closest('p, div, h1, h2, h3, blockquote') || node.parentElement;
+      if (parentBlock && parentBlock.tagName === tag) return; /* Already the correct heading */
+
+      const heading = document.createElement(tag);
+      heading.textContent = remaining || '\u200B';
+
+      if (parentBlock && parentBlock !== editorBody) {
+        parentBlock.replaceWith(heading);
+      } else {
+        node.remove();
+        editorBody.appendChild(heading);
+      }
+
+      /* Place cursor at end of heading text */
+      const range = document.createRange();
+      range.selectNodeContents(heading);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      /* Update sidebar TOC */
+      refreshSidebarToc(machine);
+    });
+
+    /* Detect `- ` or `* ` at the start of a line → unordered list */
+    /* Detect `1. ` at the start of a line → ordered list */
+    /* Detect `> ` at the start of a line → blockquote */
+    /* Detect `---` → horizontal rule */
+    editorBody.addEventListener('input', () => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const node = sel.anchorNode;
+      if (!node || node.nodeType !== Node.TEXT_NODE) return;
+      const text = node.textContent;
+      const parentBlock = node.parentElement?.closest('p, div, h1, h2, h3, li') || node.parentElement;
+      /* Skip if already inside a list or blockquote */
+      if (node.parentElement?.closest('li, blockquote, pre')) return;
+
+      /* --- Unordered list: "- " or "* " --- */
+      if (/^[-*]\s$/.test(text)) {
+        const p = (parentBlock && parentBlock !== editorBody) ? parentBlock : null;
+        if (p) { p.innerHTML = '<br>'; } else { node.textContent = ''; }
+        document.execCommand('insertUnorderedList', false, null);
+        return;
+      }
+
+      /* --- Ordered list: "1. " --- */
+      if (/^1\.\s$/.test(text)) {
+        const p = (parentBlock && parentBlock !== editorBody) ? parentBlock : null;
+        if (p) { p.innerHTML = '<br>'; } else { node.textContent = ''; }
+        document.execCommand('insertOrderedList', false, null);
+        return;
+      }
+
+      /* --- Blockquote: "> " --- */
+      if (/^>\s$/.test(text)) {
+        const p = (parentBlock && parentBlock !== editorBody) ? parentBlock : null;
+        if (p) { p.innerHTML = '<br>'; } else { node.textContent = ''; }
+        document.execCommand('formatBlock', false, 'BLOCKQUOTE');
+        setTimeout(() => injectBlockDeleteButtons(), 0);
+        return;
+      }
+
+      /* --- Horizontal rule: "---" (with optional trailing space) --- */
+      if (/^-{3,}\s?$/.test(text)) {
+        const p = (parentBlock && parentBlock !== editorBody) ? parentBlock : null;
+        if (p) p.remove(); else node.remove();
+        document.execCommand('insertHorizontalRule', false, null);
+        setTimeout(() => injectBlockDeleteButtons(), 0);
+        return;
+      }
+    });
+
+    /* Detect ``` typed inline and convert to a code block (Notion-style) */
+    editorBody.addEventListener('input', (e) => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const node = sel.anchorNode;
+      if (!node || node.nodeType !== Node.TEXT_NODE) return;
+      if (node.parentElement?.closest('pre')) return;
+      const text = node.textContent;
+      /* Match exactly "```" (optionally preceded only by whitespace at the start of the block) */
+      const idx = text.indexOf('\`\`\`');
+      if (idx === -1) return;
+      const before = text.slice(0, idx).trim();
+      if (before) return; /* Only trigger at the start of a line / block */
+
+      e.preventDefault?.();
+      const parentBlock = node.parentElement?.closest('p, div, h1, h2, h3, blockquote') || node.parentElement;
+
+      /* Create the code block */
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      code.textContent = text.slice(idx + 3).trim() || '';
+      pre.appendChild(code);
+
+      /* Create a paragraph after it so the cursor can escape */
+      const after = document.createElement('p');
+      after.innerHTML = '<br>';
+
+      if (parentBlock && parentBlock !== editorBody) {
+        parentBlock.replaceWith(pre, after);
+      } else {
+        /* Replace the text node directly */
+        node.remove();
+        editorBody.appendChild(pre);
+        editorBody.appendChild(after);
+      }
+
+      /* Place cursor inside the code block */
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      range.collapse(code.textContent.length > 0 ? false : true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      setTimeout(() => injectBlockDeleteButtons(), 0);
+    });
+
+    /* Detect `text` → inline code (Notion-style) */
+    editorBody.addEventListener('input', () => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const node = sel.anchorNode;
+      if (!node || node.nodeType !== Node.TEXT_NODE) return;
+      if (node.parentElement?.closest('pre, code')) return;
+      const text = node.textContent;
+      const match = text.match(/`([^`\n]+)`/);
+      if (!match) return;
+      const before = text.slice(0, match.index);
+      const inner = match[1];
+      const after = text.slice(match.index + match[0].length);
+      const codeEl = document.createElement('code');
+      codeEl.textContent = inner;
+      const parent = node.parentNode;
+      const frag = document.createDocumentFragment();
+      if (before) frag.appendChild(document.createTextNode(before));
+      frag.appendChild(codeEl);
+      const afterNode = document.createTextNode(after || '\u00A0');
+      frag.appendChild(afterNode);
+      parent.replaceChild(frag, node);
+      const range = document.createRange();
+      range.setStart(afterNode, after ? 0 : 1);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+
+    /* ── Double-backtick shortcut: `` → insert collapsible code block ── */
+    editorBody.addEventListener('keydown', (e) => {
+      if (e.key !== '`') return;
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const anchor = sel.anchorNode;
+      if (!anchor || anchor.nodeType !== Node.TEXT_NODE) return;
+      /* Check if the character right before the cursor is also a backtick */
+      const offset = sel.getRangeAt(0).startOffset;
+      const text = anchor.textContent || '';
+      if (offset < 1 || text[offset - 1] !== '`') return;
+      /* Already inside a code block — skip */
+      if (anchor.parentElement?.closest('pre, details.collapsible-code')) return;
+      e.preventDefault();
+      /* Remove the first backtick */
+      anchor.textContent = text.slice(0, offset - 1) + text.slice(offset);
+      /* Remove the now-empty text node parent (e.g. <p>) if empty */
+      const parentBlock = anchor.parentElement?.closest('p, div');
+      /* Build the collapsible block */
+      const details = document.createElement('details');
+      details.className = 'collapsible-code';
+      const summary = document.createElement('summary');
+      summary.textContent = 'Code';
+      summary.contentEditable = 'false';
+      const pre = document.createElement('pre');
+      pre.innerHTML = '<br>';
+      details.appendChild(summary);
+      details.appendChild(pre);
+      if (parentBlock && !parentBlock.textContent.trim()) {
+        parentBlock.replaceWith(details);
+      } else {
+        const range = sel.getRangeAt(0);
+        range.insertNode(details);
+      }
+      /* Place cursor inside the pre */
+      const newRange = document.createRange();
+      newRange.selectNodeContents(pre);
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+      details.setAttribute('open', '');
+      saveActiveNoteContent(machine);
+      setTimeout(() => injectBlockDeleteButtons(), 0);
+    });
+
+    /* Handle Enter / Backspace / Arrow keys inside code blocks */
+    editorBody.addEventListener('keydown', (e) => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const anchor = sel.anchorNode;
+      const pre = anchor?.nodeType === Node.TEXT_NODE
+        ? anchor.parentElement?.closest('pre')
+        : anchor?.closest?.('pre');
+      if (!pre || !editorBody.contains(pre)) return;
+
+      /* ── Enter in code block: double-Enter at end to escape (Notion-style) ── */
+      if (e.key === 'Enter') {
+        const code = pre.querySelector('code') || pre;
+        const txt = code.textContent || '';
+        /* Check if cursor is at the absolute end of the code content */
+        const curRange = sel.getRangeAt(0);
+        const afterRange = document.createRange();
+        afterRange.selectNodeContents(code);
+        afterRange.setStart(curRange.endContainer, curRange.endOffset);
+        const cursorAtEnd = afterRange.toString().length === 0;
+        /* If cursor is at the end and text already ends with \n,
+           the user just pressed Enter on a blank line → escape out */
+        if (cursorAtEnd && txt.endsWith('\n')) {
+          e.preventDefault();
+          code.textContent = txt.replace(/\n+$/, '');
+          let next = pre.nextElementSibling;
+          if (!next || (next.tagName !== 'P' && next.tagName !== 'DIV')) {
+            next = document.createElement('p');
+            next.innerHTML = '<br>';
+            pre.after(next);
+          }
+          const newRange = document.createRange();
+          newRange.selectNodeContents(next);
+          newRange.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(newRange);
+          return;
+        }
+        /* Normal Enter inside code block → insert a plain newline */
+        e.preventDefault();
+        document.execCommand('insertText', false, '\n');
+        return;
+      }
+
+      /* ── Backspace on empty code block → delete it ── */
+      if (e.key === 'Backspace') {
+        const code = pre.querySelector('code') || pre;
+        const txt = code.textContent || '';
+        if (txt === '' || txt === '\n') {
+          e.preventDefault();
+          let next = pre.nextElementSibling;
+          let prev = pre.previousElementSibling;
+          const target = prev || next;
+          if (!target) {
+            const p = document.createElement('p');
+            p.innerHTML = '<br>';
+            pre.replaceWith(p);
+            const range = document.createRange();
+            range.selectNodeContents(p);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          } else {
+            pre.remove();
+            const range = document.createRange();
+            range.selectNodeContents(target);
+            range.collapse(target === prev ? false : true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+          return;
+        }
+      }
+
+      /* ── ArrowDown at the end of the last line → escape below ── */
+      if (e.key === 'ArrowDown') {
+        const code = pre.querySelector('code') || pre;
+        const txt = code.textContent || '';
+        const isAtEnd = sel.anchorOffset >= (anchor.textContent || '').length;
+        if (isAtEnd) {
+          let next = pre.nextElementSibling;
+          if (!next) {
+            next = document.createElement('p');
+            next.innerHTML = '<br>';
+            pre.after(next);
+          }
+          e.preventDefault();
+          const range = document.createRange();
+          range.selectNodeContents(next);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+
+      /* ── ArrowUp at the start of the first line → escape above ── */
+      if (e.key === 'ArrowUp') {
+        if (sel.anchorOffset === 0) {
+          let prev = pre.previousElementSibling;
+          if (!prev) {
+            prev = document.createElement('p');
+            prev.innerHTML = '<br>';
+            pre.before(prev);
+          }
+          e.preventDefault();
+          const range = document.createRange();
+          range.selectNodeContents(prev);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+
+      /* ── Tab in code block → insert spaces ── */
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        document.execCommand('insertText', false, '    ');
+      }
+    });
+
+    /* ── General keydown: heading Enter, Tab, Ctrl shortcuts ── */
+    editorBody.addEventListener('keydown', (e) => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const anchor = sel.anchorNode;
+      /* Skip if inside a code block (handled by the handler above) */
+      const inPre = anchor?.nodeType === Node.TEXT_NODE
+        ? anchor.parentElement?.closest('pre')
+        : anchor?.closest?.('pre');
+      if (inPre && editorBody.contains(inPre)) return;
+
+      /* ── Enter on empty list item → exit list (Notion-style) ── */
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const li = anchor?.nodeType === Node.TEXT_NODE
+          ? anchor.parentElement?.closest('li')
+          : anchor?.closest?.('li');
+        if (li && editorBody.contains(li)) {
+          const liText = li.textContent || '';
+          if (!liText.trim()) {
+            e.preventDefault();
+            const list = li.closest('ul, ol');
+            if (list) {
+              const itemsAfter = [];
+              let sib = li.nextElementSibling;
+              while (sib) { itemsAfter.push(sib); sib = sib.nextElementSibling; }
+              li.remove();
+              const p = document.createElement('p');
+              p.innerHTML = '<br>';
+              if (itemsAfter.length) {
+                const newList = document.createElement(list.tagName);
+                itemsAfter.forEach(item => newList.appendChild(item));
+                list.after(p, newList);
+              } else {
+                list.after(p);
+              }
+              if (!list.children.length) list.remove();
+              const range = document.createRange();
+              range.selectNodeContents(p);
+              range.collapse(true);
+              sel.removeAllRanges();
+              sel.addRange(range);
+              return;
+            }
+          }
+        }
+      }
+
+      /* ── Enter in a heading → split into heading + paragraph (Notion-style) ── */
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const heading = anchor?.nodeType === Node.TEXT_NODE
+          ? anchor.parentElement?.closest('h1, h2, h3')
+          : anchor?.closest?.('h1, h2, h3');
+        if (heading && editorBody.contains(heading)) {
+          e.preventDefault();
+          const range = sel.getRangeAt(0);
+          /* Check if cursor is at the very start */
+          const beforeCursor = document.createRange();
+          beforeCursor.selectNodeContents(heading);
+          beforeCursor.setEnd(range.startContainer, range.startOffset);
+          if (beforeCursor.toString().length === 0) {
+            /* Insert blank paragraph above, keep cursor in heading */
+            const blankP = document.createElement('p');
+            blankP.innerHTML = '<br>';
+            heading.before(blankP);
+            return;
+          }
+          /* Extract tail content into a new paragraph */
+          const tailRange = range.cloneRange();
+          tailRange.selectNodeContents(heading);
+          tailRange.setStart(range.startContainer, range.startOffset);
+          const tail = tailRange.extractContents();
+          const p = document.createElement('p');
+          if (tail.textContent.trim()) {
+            p.appendChild(tail);
+          } else {
+            p.innerHTML = '<br>';
+          }
+          heading.after(p);
+          const newRange = document.createRange();
+          newRange.selectNodeContents(p);
+          newRange.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(newRange);
+          refreshSidebarToc(machine);
+          return;
+        }
+      }
+
+      /* ── Enter in a blockquote → if line is empty, escape out ── */
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const bq = anchor?.nodeType === Node.TEXT_NODE
+          ? anchor.parentElement?.closest('blockquote')
+          : anchor?.closest?.('blockquote');
+        if (bq && editorBody.contains(bq)) {
+          const text = anchor?.textContent || '';
+          if (!text.trim() || text === '\n') {
+            e.preventDefault();
+            const p = document.createElement('p');
+            p.innerHTML = '<br>';
+            bq.after(p);
+            /* If the blockquote only had the empty line, remove it */
+            if (!bq.textContent.trim()) bq.remove();
+            const newRange = document.createRange();
+            newRange.selectNodeContents(p);
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+            return;
+          }
+        }
+      }
+
+      /* ── Backspace at start of heading → convert to paragraph ── */
+      if (e.key === 'Backspace') {
+        const heading = anchor?.nodeType === Node.TEXT_NODE
+          ? anchor.parentElement?.closest('h1, h2, h3')
+          : anchor?.closest?.('h1, h2, h3');
+        if (heading && editorBody.contains(heading)) {
+          const range = sel.getRangeAt(0);
+          const beforeRange = document.createRange();
+          beforeRange.selectNodeContents(heading);
+          beforeRange.setEnd(range.startContainer, range.startOffset);
+          if (beforeRange.toString().length === 0) {
+            e.preventDefault();
+            const p = document.createElement('p');
+            p.innerHTML = heading.innerHTML || '<br>';
+            heading.replaceWith(p);
+            const newRange = document.createRange();
+            newRange.selectNodeContents(p);
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+            refreshSidebarToc(machine);
+            return;
+          }
+        }
+        /* ── Backspace at start of blockquote → unwrap to paragraph ── */
+        const bq = anchor?.nodeType === Node.TEXT_NODE
+          ? anchor.parentElement?.closest('blockquote')
+          : anchor?.closest?.('blockquote');
+        if (bq && editorBody.contains(bq)) {
+          const range = sel.getRangeAt(0);
+          const beforeRange = document.createRange();
+          beforeRange.selectNodeContents(bq);
+          beforeRange.setEnd(range.startContainer, range.startOffset);
+          if (beforeRange.toString().length === 0) {
+            e.preventDefault();
+            const p = document.createElement('p');
+            p.innerHTML = bq.innerHTML || '<br>';
+            bq.replaceWith(p);
+            const newRange = document.createRange();
+            newRange.selectNodeContents(p);
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+            return;
+          }
+        }
+      }
+
+      /* ── Tab / Shift+Tab: indent / outdent ── */
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          document.execCommand('outdent', false, null);
+        } else {
+          /* If inside a list, indent the list item; otherwise insert spaces */
+          const li = anchor?.nodeType === Node.TEXT_NODE
+            ? anchor.parentElement?.closest('li')
+            : anchor?.closest?.('li');
+          if (li) {
+            document.execCommand('indent', false, null);
+          } else {
+            document.execCommand('insertText', false, '    ');
+          }
+        }
+        return;
+      }
+
+      /* ── Ctrl+1/2/3: heading shortcuts ── */
+      if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+        if (e.key === '1' || e.key === '2' || e.key === '3') {
+          e.preventDefault();
+          const tag = 'H' + e.key;
+          /* Toggle: if already the same heading, revert to paragraph */
+          const curBlock = anchor?.nodeType === Node.TEXT_NODE
+            ? anchor.parentElement?.closest('h1, h2, h3, p, div')
+            : anchor?.closest?.('h1, h2, h3, p, div');
+          if (curBlock && curBlock.tagName === tag) {
+            document.execCommand('formatBlock', false, 'P');
+          } else {
+            document.execCommand('formatBlock', false, tag);
+          }
+          refreshSidebarToc(machine);
+          return;
+        }
+        /* ── Ctrl+0: clear block formatting (back to paragraph) ── */
+        if (e.key === '0') {
+          e.preventDefault();
+          document.execCommand('formatBlock', false, 'P');
+          refreshSidebarToc(machine);
+          return;
+        }
+        /* ── Ctrl+Shift is handled below ── */
+      }
+
+      /* ── Ctrl+Shift+X: clear all formatting ── */
+      if (e.ctrlKey && e.shiftKey && (e.key === 'x' || e.key === 'X')) {
+        e.preventDefault();
+        document.execCommand('removeFormat', false, null);
+        document.execCommand('formatBlock', false, 'P');
+        refreshSidebarToc(machine);
+        return;
+      }
+    });
+
+    /* ── Image double-click → zoom modal ── */
+    editorBody.addEventListener('dblclick', (e) => {
+      const img = e.target.closest('img');
+      if (!img) return;
+      e.preventDefault();
+      const modal = document.getElementById('imageZoomModal');
+      const zoomImg = document.getElementById('imageZoomImg');
+      if (!modal || !zoomImg) return;
+      zoomImg.src = img.src;
+      modal.showModal();
+    });
+
+    /* Auto-save on input (debounced) */
+    let noteSaveTimer;
+    let tocTimer;
+    let mmTimer;
+    editorBody.addEventListener('input', () => {
+      clearTimeout(noteSaveTimer);
+      noteSaveTimer = setTimeout(() => {
+        saveActiveNoteContent(machine);
+      }, 500);
+      clearTimeout(tocTimer);
+      tocTimer = setTimeout(() => {
+        refreshSidebarToc(machine);
+      }, 300);
+      /* Live-update mind map when headings change */
+      clearTimeout(mmTimer);
+      mmTimer = setTimeout(() => {
+        refreshMindMapInPlace(machine);
+      }, 600);
+    });
+
+    /* Save on blur */
+    editorBody.addEventListener('blur', () => {
+      saveActiveNoteContent(machine);
+      refreshMindMapInPlace(machine);
+    });
+
+    /* Wire initial TOC clicks (for pre-existing headings) */
+    wireTocClicks(editorBody);
+  }
+
+  /* --- Port selection (informational, not tied to filtering) --- */
+  document.querySelectorAll('[data-port-select]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const port = btn.dataset.portSelect;
+      if (port === '__all__') {
+        machine.selected_ports = [];
+      } else {
+        const sel = new Set(machine.selected_ports || []);
+        const wasSelected = sel.has(port);
+        if (wasSelected) sel.delete(port); else sel.add(port);
+        machine.selected_ports = Array.from(sel).sort((a, b) => Number(a) - Number(b));
+        /* Inject H2 header under "Port Enumeration" when a port is toggled ON */
+        if (!wasSelected) {
+          /* Flush editor content first so injectPortHeader works on current data */
+          saveActiveNoteContent(machine);
+          ensureDefaultHeaders(machine, 'recon');
+          injectPortHeader(machine, port);
+          /* Sync editor DOM so mount()'s save doesn't overwrite the injection */
+          const editorBody = document.getElementById('notesEditorBody');
+          if (editorBody && editorBody.dataset.phaseId === 'recon') {
+            editorBody.innerHTML = getPhaseNote(machine, 'recon');
+          }
+        }
+      }
+      persistSoon();
+      mount();
+    });
+  });
+}
+
+/** Save the current editor content back to the active phase note */
+function saveActiveNoteContent(machine) {
+  const editorBody = document.getElementById('notesEditorBody');
+  if (!editorBody) return;
+  /* Use the phase ID stamped on the editor element, not state.ui.activeNoteId,
+     because state may have already been updated to a new phase before mount()
+     re-renders the DOM. */
+  const phaseId = editorBody.dataset.phaseId;
+  if (phaseId) {
+    setPhaseNote(machine, phaseId, editorBody.innerHTML);
+    persistSoon();
+  }
+}
+
+/** Refresh just the sidebar TOC under the active phase (no full re-render) */
+function refreshSidebarToc(machine) {
+  const treeList = document.querySelector('.notes-tree-list');
+  if (!treeList) return;
+  const editorBody = document.getElementById('notesEditorBody');
+  if (!editorBody) return;
+  const phaseId = state.ui.activeNoteId;
+  if (!phaseId) return;
+  /* Remove existing TOC */
+  treeList.querySelectorAll('.toc-list').forEach(el => el.remove());
+  /* Extract headings from live editor content */
+  const toc = extractHeadingToc(editorBody.innerHTML);
+  if (!toc.length) return;
+  /* Find the active phase button and insert TOC after it */
+  const activeBtn = treeList.querySelector(`.note-tree-item[data-phase-note="${phaseId}"]`);
+  if (!activeBtn) return;
+  const tocDiv = document.createElement('div');
+  tocDiv.className = 'toc-list';
+  tocDiv.innerHTML = toc.map(h =>
+    `<button class="toc-item toc-level-${h.level}" data-toc-index="${h.index}" type="button">${escapeHtml(h.text)}</button>`
+  ).join('');
+  activeBtn.after(tocDiv);
+  /* Wire TOC click → scroll to heading */
+  wireTocClicks(editorBody);
+}
+
+/** Wire TOC item clicks to scroll to the corresponding heading in the editor */
+function wireTocClicks(editorBody) {
+  document.querySelectorAll('.toc-item[data-toc-index]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.tocIndex, 10);
+      const headings = editorBody.querySelectorAll('h1, h2, h3');
+      if (headings[idx]) {
+        headings[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        /* Place cursor in the heading */
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(headings[idx]);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    });
+  });
 }
 
 /**
@@ -1431,8 +2500,6 @@ function renderCredInlinePanel(machine) {
  * Also renders the phase filter bar, zoom controls, and unlinked credentials.
  */
 function renderMachineMindMap(machine) {
-  const allFindings = machineFindings(machine.id);
-  const allCreds    = machineCredentials(machine.id);
   const isFullscreenView = mmFsMachineId === machine.id;
   const machinePhases = checklistPhaseCatalogForMachine(machine);
   const phaseLabel = (phase) => {
@@ -1453,9 +2520,7 @@ function renderMachineMindMap(machine) {
 
   const activePhaseRaw = state.ui.mmPhase || 'all';
   const activePhase = PHASE_DEFS.some((phaseDef) => phaseDef.id === activePhaseRaw) ? activePhaseRaw : 'all';
-  const isPreviewMode = !isFullscreenView;
 
-  /* ── Phase order for cross-phase parenting ── */
   const PHASE_ORDER = machinePhases.map((phase) => phase.id);
 
   const vpId     = 'mm-vp-'     + machine.id;
@@ -1479,191 +2544,103 @@ function renderMachineMindMap(machine) {
     </div>
   `;
 
-  if (!allFindings.length) {
-    const unlinkedCredsEmpty = allCreds.filter(c => !c.finding_id);
-    const unlinkedHtml = !unlinkedCredsEmpty.length ? '' : `
-      <div class="mm-unlinked-creds">
-        <div class="mm-unlinked-creds-header">
-          <span class="mm-unlinked-icon">\uD83D\uDD11</span>
-          Unlinked Credentials
-          <span class="badge" style="border-color:rgba(234,179,8,.35);color:#eab308;font-size:.6rem">${unlinkedCredsEmpty.length}</span>
-        </div>
-        <div class="mm-unlinked-creds-list">
-          ${unlinkedCredsEmpty.map(c => `
-            <div class="mm-cred-blob" style="position:relative">
-              <span class="mm-cred-blob-icon">\uD83D\uDD11</span>
-              <span class="mm-cred-blob-name">${c.username}</span>
-              ${c.service ? `<span class="mm-cred-blob-svc">${c.service}</span>` : `<span class="mm-cred-blob-svc">${c.cred_type}</span>`}
-            </div>
-          `).join('')}
-        </div>
+  /* ── Extract heading tree for a phase ── */
+  function getPhaseHeadingTree(phaseId) {
+    const html = getPhaseNote(machine, phaseId);
+    if (!html) return [];
+    const toc = extractHeadingToc(html);
+    /* Build a nested tree: h1 at root, h2 under last h1, h3 under last h2 */
+    const tree = [];
+    let lastH1 = null, lastH2 = null;
+    toc.forEach(h => {
+      const node = { level: h.level, text: h.text, index: h.index, children: [] };
+      if (h.level === 1) {
+        tree.push(node);
+        lastH1 = node;
+        lastH2 = null;
+      } else if (h.level === 2) {
+        if (lastH1) { lastH1.children.push(node); }
+        else { tree.push(node); }
+        lastH2 = node;
+      } else {
+        if (lastH2) { lastH2.children.push(node); }
+        else if (lastH1) { lastH1.children.push(node); }
+        else { tree.push(node); }
+      }
+    });
+    return tree;
+  }
+
+  /* ── Render heading node recursively ── */
+  function renderHeadingNode(node, phaseId, col) {
+    const levelClass = `mm-heading-level-${node.level}`;
+    const childrenHtml = node.children.length ? `
+      <div class="mm-heading-children">
+        ${node.children.map(c => renderHeadingNode(c, phaseId, col)).join('')}
       </div>
-    `;
+    ` : '';
     return `
-      <div class="machine-mindmap" id="mm-container-${machine.id}">
-        ${filterBar}
-        <div class="mm-viewport" id="${vpId}">
-          <div class="mm-pan-canvas" id="${canvasId}">
-            <p class="small dim" style="padding:.75rem">Add findings to populate the mind map.</p>
-            ${unlinkedHtml}
-          </div>
-        </div>
+      <div class="mm-heading-row ${levelClass}">
+        <button class="mm-heading-node" data-mm-heading-jump="${phaseId}" data-mm-heading-index="${node.index}" type="button" style="--node-phase-col:${col}">
+          <span class="mm-heading-tag">H${node.level}</span>
+          <span class="mm-heading-text">${escapeHtml(node.text)}</span>
+        </button>
+        ${childrenHtml}
       </div>
     `;
   }
 
-  const sevColor = (sev) => {
-    if (sev === 'critical') return '#ef4444';
-    if (sev === 'high')     return '#f97316';
-    if (sev === 'medium')   return '#f59e0b';
-    if (sev === 'low')      return '#3b82f6';
-    return 'var(--muted)';
-  };
-
-  function fmtTime(stamp) {
-    if (!stamp) return '';
-    const d = new Date(stamp);
-    if (isNaN(d)) return '';
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yy = String(d.getFullYear()).slice(-2);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mi = String(d.getMinutes()).padStart(2, '0');
-    const ss = String(d.getSeconds()).padStart(2, '0');
-    return `[${hh}:${mi}:${ss}] [${dd}/${mm}/${yy}]`;
-  }
-
-  function renderLeafGroup(f) {
-    // Only show same-phase children (cross-phase children are roots in their own lane)
-    const children    = allFindings.filter(c => c.parent_id === f.id && c.phase === f.phase);
-    const sColor      = sevColor(f.severity);
-    const linkedCreds = allCreds.filter(c => c.finding_id === f.id);
-    const evidenceCount = (f.evidence || []).length;
+  /* ── Render a phase block ── */
+  function renderPhaseBlock(phaseId, col, name, leftPx, topPx) {
+    const tree = getPhaseHeadingTree(phaseId);
+    const headingCount = (function countAll(nodes) { return nodes.reduce((s, n) => s + 1 + countAll(n.children), 0); })(tree);
     return `
-      <div class="mm-leaf-row" data-mm-fid="${f.id}">
-        <div class="mm-node mm-leaf-clickable" data-finding-view="${f.id}" style="--node-sev:${sColor}">
-          <span class="mm-node-title">${f.title}</span>
-          <div class="mm-node-meta">
-            <span class="mm-node-badge" style="background:${sColor}22;color:${sColor};border-color:${sColor}55">${f.severity}</span>
-            ${evidenceCount ? `<span class="mm-evidence-badge" title="${evidenceCount} evidence file${evidenceCount > 1 ? 's' : ''}">📓 ${evidenceCount}</span>` : ''}
-            ${linkedCreds.length ? `<span class="mm-evidence-badge" title="${linkedCreds.length} linked credential${linkedCreds.length > 1 ? 's' : ''}" style="color:#eab308">🔑 ${linkedCreds.length}</span>` : ''}
-          </div>
-          <span class="mm-time">${fmtTime(f.created_at)}</span>
+      <div class="mm-fs-block" data-mm-drag-block="${phaseId}"
+           style="--phase-col:${col}; left:${leftPx}px; top:${topPx}px">
+        <div class="mm-fs-block-header" data-mm-drag-handle>
+          <span class="mm-phase-lane-dot" style="background:${col};box-shadow:0 0 7px ${col}99"></span>
+          <span class="mm-fs-block-name">${name}</span>
+          <span class="mm-phase-lane-count">${headingCount}</span>
         </div>
-        ${linkedCreds.length ? `
-          <div class="mm-cred-chain">
-            ${linkedCreds.map(c => `
-              <div class="mm-cred-blob">
-                <span class="mm-cred-blob-icon">\uD83D\uDD11</span>
-                <span class="mm-cred-blob-name">${c.username}</span>
-                ${c.service ? `<span class="mm-cred-blob-svc">${c.service}</span>` : ''}
-              </div>
-            `).join('')}
-          </div>
-        ` : ''}
-        ${children.length ? `
-          <div class="mm-leaves">
-            ${children.map(child => renderLeafGroup(child)).join('')}
-          </div>
-        ` : ''}
-      </div>
-    `;
+        <div class="mm-fs-block-body">
+          ${!tree.length ? '<span class="mm-empty-hint">no notes yet</span>' :
+            tree.map(n => renderHeadingNode(n, phaseId, col)).join('')}
+        </div>
+      </div>`;
   }
-
-  function renderUnlinkedCreds() {
-    const unlinked = allCreds.filter(c => !c.finding_id);
-    if (!unlinked.length) return '';
-    return `
-      <div class="mm-unlinked-creds">
-        <div class="mm-unlinked-creds-header">
-          <span class="mm-unlinked-icon">\uD83D\uDD11</span>
-          Unlinked Credentials
-          <span class="badge" style="border-color:rgba(234,179,8,.35);color:#eab308;font-size:.6rem">${unlinked.length}</span>
-        </div>
-        <div class="mm-unlinked-creds-list">
-          ${unlinked.map(c => `
-            <div class="mm-cred-blob" style="position:relative">
-              <span class="mm-cred-blob-icon">\uD83D\uDD11</span>
-              <span class="mm-cred-blob-name">${c.username}</span>
-              ${c.service ? `<span class="mm-cred-blob-svc">${c.service}</span>` : `<span class="mm-cred-blob-svc">${c.cred_type}</span>`}
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  /* Group root-level findings by phase.
-     A finding is root in its own phase if:
-       - it has no parent_id, OR
-       - its parent doesn't exist, OR
-       - its parent is in a DIFFERENT phase (cross-phase parent) */
-  const byPhase = {};
-  allFindings.forEach(f => {
-    const parent = f.parent_id ? allFindings.find(p => p.id === f.parent_id) : null;
-    const isRoot = !f.parent_id || !parent || parent.phase !== f.phase;
-    if (!isRoot) return;
-    const pid = f.phase || 'unknown';
-    if (!byPhase[pid]) byPhase[pid] = [];
-    byPhase[pid].push(f);
-  });
-
-  const fixedIds = [...PHASE_ORDER];
-  /* Include any findings with unexpected/legacy phases */
-  Object.keys(byPhase).forEach(pid => {
-    if (!fixedIds.includes(pid)) fixedIds.push(pid);
-  });
 
   const phaseName = (id) => {
-    // use short label from PHASE_DEFS if available
     const def = PHASE_DEFS.find(d => d.id === id);
     if (def && def.label !== 'Default') return def.label;
     const p = machinePhases.find(ph => ph.id === id);
     return p ? p.name : id;
   };
 
+  /* ── Check if any phase has headings ── */
+  const anyHeadings = PHASE_ORDER.some(pid => getPhaseHeadingTree(pid).length > 0);
+
   let canvasContent;
   if (activePhase === 'all') {
-    /* ── Default + Fullscreen: draggable free-form blocks, left-to-right ── */
-    const fsPhaseIds = [...PHASE_ORDER];
-    /* Include any findings with unexpected/legacy phases */
-    Object.keys(byPhase).forEach(pid => {
-      if (!fsPhaseIds.includes(pid)) fsPhaseIds.push(pid);
-    });
-    const fsBlocks = fsPhaseIds.map((pid, i) => {
+    const fsBlocks = PHASE_ORDER.map((pid, i) => {
       const col  = phaseColor(pid);
       const name = phaseName(pid);
-      const items = byPhase[pid] || [];
-      return `
-        <div class="mm-fs-block" data-mm-drag-block="${pid}"
-             style="--phase-col:${col}; left:${i * 400}px; top:${40 + (i % 2) * 30}px">
-          <div class="mm-fs-block-header" data-mm-drag-handle>
-            <span class="mm-phase-lane-dot" style="background:${col};box-shadow:0 0 7px ${col}99"></span>
-            <span class="mm-fs-block-name">${name}</span>
-            <span class="mm-phase-lane-count">${items.length}</span>
-          </div>
-          <div class="mm-fs-block-body">
-            ${!items.length ? '<span class="mm-empty-hint">no findings</span>' :
-              items.map(f => renderLeafGroup(f)).join('')}
-          </div>
-        </div>`;
+      return renderPhaseBlock(pid, col, name, i * 400, 40 + (i % 2) * 30);
     });
 
     canvasContent = `
       <div class="mm-fs-workspace">
         <svg class="mm-fs-connectors-svg" xmlns="http://www.w3.org/2000/svg"></svg>
         ${fsBlocks.join('')}
-        ${renderUnlinkedCreds()}
       </div>
     `;
   } else {
-    const items = byPhase[activePhase] || [];
     const col   = phaseColor(activePhase);
     const name  = phaseName(activePhase);
+    const tree  = getPhaseHeadingTree(activePhase);
 
-    const phaseBody = !items.length
-      ? '<p class="small dim" style="margin:.75rem 0 .25rem">No findings in this phase yet.</p>'
-      : `<div class="mm-single-leaves">${items.map(f => renderLeafGroup(f)).join('')}</div>`;
+    const phaseBody = !tree.length
+      ? '<p class="small dim" style="margin:.75rem 0 .25rem">No headings in this phase yet. Add H1/H2/H3 headings to your notes.</p>'
+      : `<div class="mm-single-leaves">${tree.map(n => renderHeadingNode(n, activePhase, col)).join('')}</div>`;
 
     canvasContent = `
       <div class="mm-single-phase" style="--phase-col:${col}">
@@ -1672,7 +2649,14 @@ function renderMachineMindMap(machine) {
           ${name}
         </div>
         ${phaseBody}
-        ${renderUnlinkedCreds()}
+      </div>
+    `;
+  }
+
+  if (!anyHeadings && activePhase === 'all') {
+    canvasContent = `
+      <div class="mm-fs-workspace">
+        <p class="small dim" style="padding:.75rem">Add H1/H2/H3 headings to your phase notes to populate the mind map.</p>
       </div>
     `;
   }
@@ -1691,18 +2675,15 @@ function renderMachineMindMap(machine) {
  * Render the full machine detail page:
  * • Machine header (IP, hostname, status, OS, progress bar)
  * • Mind map visualisation
- * • Checklist accordion (default tab)
- * • Sidebar with modal-open tabs (Credentials, Findings, Evidence, Notes)
- * • Section Table of Contents for the checklist
+ * • Pentest notes workspace (CherryTree-style, main content)
+ * • Sidebar with modal-open tabs (Checklist, Documentation, Credentials, Findings, Evidence)
  * • Recent activity feed
  */
 function renderMachineDetail(machine) {
   const progress = getTotalProgress(machine);
   const recentActivity = machineActivity(machine.id).slice(0, 20);
-  const checklistNavPhases = checklistPhasesFor(machine);
 
-  const tabContent = renderChecklist(machine);
-  state.ui.machineTab = 'checklist';
+  state.ui.machineTab = 'notes';
 
   return `
     <section>
@@ -1748,39 +2729,23 @@ function renderMachineDetail(machine) {
       ${renderMachineMindMap(machine)}
 
       <div class="machine-content-layout">
-        <div class="machine-main">${tabContent}</div>
+        <div class="machine-main">${renderNotesWorkspace(machine)}</div>
         <aside class="machine-side sticky-side">
           <div class="tabs tabs-vertical sticky-tabs">
             <button class="tab" id="scrollToMindMap">🌐 Mind Map</button>
             <button class="tab" id="openCredModalTab">🔑 Credentials (${machineCredentials(machine.id).length})</button>
-            <button class="tab" id="openFindingsModalTab">🔍 Findings (${machineFindings(machine.id).length})</button>
-            <button class="tab" id="openEvidenceModalTab">📓 Evidence (${machineEvidenceCount(machine.id)})</button>
             <button class="tab" id="openDocumentationTab">📄 Documentation</button>
+            <button class="tab" id="openChecklistTab">📋 Checklist</button>
             <button class="tab" id="openAiDocumentationTab">🤖 AI Penetration Testing</button>
-            <button class="tab" id="openNotesModalTab">📝 Notes</button>
           </div>
-          ${state.ui.machineTab === 'checklist' ? `
-            <div class="section-toc">
-              <div class="small dim">Sections</div>
-              <input type="text" class="section-toc-search" id="tocSearchInput" placeholder="Search tasks…" autocomplete="off">
-              <div class="section-toc-list">
-                ${checklistNavPhases.map((phase) => {
-                  const expanded = state.ui.openPhases.includes(phase.id);
-                  const completedSet = new Set(machine.completed_items || []);
-                  return `
-                    <div class="section-toc-group">
-                      <button class="section-toc-link${expanded ? ' expanded' : ''}" data-phase-toggle="${phase.id}" type="button" style="color:${phaseColor(phase.id)}">${phase.name} <span class="chevron">${expanded ? '▼' : '▶'}</span></button>
-                      <div class="section-toc-sublist" style="display:${expanded ? 'block' : 'none'}">
-                        ${phase.items.map((item) => `
-                          <button class="section-toc-task${completedSet.has(item.id) ? ' completed' : ''}" data-task-jump="${item.id}" data-task-phase="${phase.id}" data-task-link="${item.id}" type="button">${item.name}</button>
-                        `).join('')}
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
+          <div class="notes-tree">
+            <div class="notes-tree-header">
+              <span class="subhead">Phases</span>
             </div>
-          ` : ''}
+            <div class="notes-tree-list">
+              ${buildPhaseListHtml(machine)}
+            </div>
+          </div>
         </aside>
       </div>
 
@@ -1805,6 +2770,15 @@ function renderMachineDetail(machine) {
  * Tears down any open modals/fullscreen state before rendering.
  */
 function mount() {
+  /* Save any in-progress note content before DOM is destroyed */
+  {
+    const prevPath = routePath();
+    const prevMid = parseMachineRoute(prevPath);
+    if (prevMid) {
+      const prevMachine = machineById(prevMid);
+      if (prevMachine) saveActiveNoteContent(prevMachine);
+    }
+  }
   setNav();
   document.body.classList.remove('mm-fs-active');
   mmFsMachineId = null;
@@ -1824,20 +2798,20 @@ function mount() {
     }
     main.innerHTML = renderMachineDetail(machine);
     wireMachineDetail(machine);
-    persist();
+    persistSoon();
     return;
   }
 
   if (path.startsWith('/timeline')) {
     main.innerHTML = renderTimeline();
-    persist();
+    persistSoon();
     return;
   }
 
   main.innerHTML = renderDashboard();
   wireDashboard();
   updateStorageMeters();
-  persist();
+  persistSoon();
 }
 
 /* ───────────────────────────────────────────────
@@ -2320,8 +3294,6 @@ function wireMMFullscreenBtn(machine, mmEl) {
 function refreshMindMapInPlace(machine) {
   const mmEl = document.getElementById('mm-container-' + machine.id);
   if (!mmEl) { mount(); return; }
-  /* Parse the new markup, extract inner HTML only so the container
-     element (= the fullscreen element) is never replaced */
   const tmp = document.createElement('div');
   tmp.innerHTML = renderMachineMindMap(machine).trim();
   const newInner = tmp.firstElementChild;
@@ -2336,28 +3308,50 @@ function refreshMindMapInPlace(machine) {
   });
   wireMindMapPanZoom(machine);
   wireMMFullscreenBtn(machine, mmEl);
-  /* Re-wire finding clicks */
-  mmEl.querySelectorAll('[data-finding-view]').forEach(el => {
-    el.addEventListener('click', () => openFindingEditModal(el.dataset.findingView));
-  });
-  /* Re-wire archived toggle */
-  mmEl.querySelectorAll('[data-mm-toggle-archived]').forEach(bar => {
-    bar.addEventListener('click', () => {
-      const panel = bar.nextElementSibling;
-      if (!panel) return;
-      const open = panel.style.display !== 'none';
-      panel.style.display = open ? 'none' : 'block';
-      const chevron = bar.querySelector('.mm-archived-chevron');
-      if (chevron) chevron.textContent = open ? '▸' : '▾';
-      bar.classList.toggle('mm-archived-bar--open', !open);
+  /* Wire heading jump clicks */
+  wireMMHeadingJumps(machine, mmEl);
+  /* Wire draggable blocks in fullscreen */
+  wireFsBlockDrag(mmEl, machine);
+}
+
+/**
+ * Wire heading node clicks in the mind map.
+ * Clicking a heading navigates to the phase notes and scrolls to that heading.
+ */
+function wireMMHeadingJumps(machine, root) {
+  root.querySelectorAll('[data-mm-heading-jump]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const phaseId = btn.dataset.mmHeadingJump;
+      const headingIndex = parseInt(btn.dataset.mmHeadingIndex, 10);
+      /* Exit fullscreen if active */
+      if (mmFsMachineId === machine.id) {
+        const mmEl = document.getElementById('mm-container-' + machine.id);
+        if (mmEl) {
+          mmEl.classList.remove('mm-inline-fullscreen');
+          document.body.classList.remove('mm-fs-active');
+          mmFsMachineId = null;
+        }
+      }
+      /* Navigate to the phase */
+      state.ui.activeNoteId = phaseId;
+      persist();
+      mount();
+      /* After mount, scroll to the heading in the editor */
+      requestAnimationFrame(() => {
+        const editorBody = document.getElementById('notesEditorBody');
+        if (!editorBody) return;
+        const headings = editorBody.querySelectorAll('h1, h2, h3');
+        const target = headings[headingIndex];
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          /* Brief highlight flash */
+          target.style.transition = 'background .2s';
+          target.style.background = 'rgba(124,58,237,.25)';
+          setTimeout(() => { target.style.background = ''; }, 1200);
+        }
+      });
     });
   });
-  /* Re-wire lane scroll arrows */
-  wireLaneScrollArrows(mmEl);
-  /* Draw leaf connectors (parent→child, finding→credential) */
-  drawLeafConnectors(mmEl);
-  /* Wire draggable blocks in fullscreen (also draws cross-phase arrows after layout) */
-  wireFsBlockDrag(mmEl, machine);
 }
 
 /* ───────────────────────────────────────────────
@@ -2387,7 +3381,10 @@ function wireLaneScrollArrows(root) {
 
     arrowUp.addEventListener('click', (e) => { e.stopPropagation(); body.scrollBy({ top: -SCROLL_STEP, behavior: 'smooth' }); });
     arrowDn.addEventListener('click', (e) => { e.stopPropagation(); body.scrollBy({ top:  SCROLL_STEP, behavior: 'smooth' }); });
-    body.addEventListener('scroll', sync, { passive: true });
+    let laneScrollRaf = 0;
+    body.addEventListener('scroll', () => {
+      if (!laneScrollRaf) laneScrollRaf = requestAnimationFrame(() => { laneScrollRaf = 0; sync(); });
+    }, { passive: true });
 
     // Initial sync after a tick (layout needs to settle)
     requestAnimationFrame(sync);
@@ -2627,8 +3624,6 @@ function wireFsBlockDrag(mmEl, machine) {
       const dy = (e.clientY - startY) / s;
       block.style.left = (origLeft + dx) + 'px';
       block.style.top  = (origTop  + dy) + 'px';
-      updateFsConnectors(workspace);
-      drawCrossPhaseArrows(mmEl, machine);
     };
 
     const onUp = () => {
@@ -2637,6 +3632,8 @@ function wireFsBlockDrag(mmEl, machine) {
       block.style.zIndex = '';
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      updateFsConnectors(workspace);
+      drawCrossPhaseArrows(mmEl, machine);
       /* Save all block positions */
       saveFsBlockPositions(workspace, machine);
     };
@@ -2777,12 +3774,13 @@ function wireMindMapPanZoom(machine) {
   let scale = saved ? saved.scale : 1;
   let dragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
 
+  let mmPanRaf = 0;
   canvasEl.style.transformOrigin = '0 0';
 
   function saveMmView() {
     if (!state.ui.mmViewState) state.ui.mmViewState = {};
     state.ui.mmViewState[machine.id] = { tx, ty, scale };
-    persist();
+    persistSoon();
   }
 
   function applyTransform() {
@@ -2805,7 +3803,7 @@ function wireMindMapPanZoom(machine) {
     if (!dragging) return;
     tx = startTx + (e.clientX - startX);
     ty = startTy + (e.clientY - startY);
-    applyTransform();
+    if (!mmPanRaf) mmPanRaf = requestAnimationFrame(() => { mmPanRaf = 0; applyTransform(); });
   }
 
   function onMouseUp() {
@@ -2906,8 +3904,12 @@ function wireMachineDetail(machine) {
   document.getElementById('openFindingsModalTab')?.addEventListener('click', () => openFindingsModal(machine));
   document.getElementById('openEvidenceModalTab')?.addEventListener('click', () => openEvidenceModal(machine));
   document.getElementById('openDocumentationTab')?.addEventListener('click', () => openDocsModal());
+  document.getElementById('openChecklistTab')?.addEventListener('click', () => openChecklistModal(machine));
   document.getElementById('openAiDocumentationTab')?.addEventListener('click', () => openAiDocsModal());
-  document.getElementById('openNotesModalTab')?.addEventListener('click', () => openNotesModal(machine));
+
+  /* --- Wire notes workspace --- */
+  wireNotesWorkspace(machine);
+
 
   document.getElementById('backToDashboard').addEventListener('click', () => {
     window.location.hash = '#/';
@@ -2965,400 +3967,13 @@ function wireMachineDetail(machine) {
     });
   });
 
-  wireChecklist(machine);
 
-  /* --- Mind map finding clicks (always wired, regardless of active tab) --- */
-  document.querySelectorAll('[data-finding-view]').forEach((el) => {
-    el.addEventListener('click', () => openFindingEditModal(el.dataset.findingView));
-  });
 
-  /* --- Archived findings toggle (day-column view) --- */
-  document.querySelectorAll('[data-mm-toggle-archived]').forEach(bar => {
-    bar.addEventListener('click', () => {
-      const panel = bar.nextElementSibling;
-      if (!panel) return;
-      const open = panel.style.display !== 'none';
-      panel.style.display = open ? 'none' : 'block';
-      const chevron = bar.querySelector('.mm-archived-chevron');
-      if (chevron) chevron.textContent = open ? '▸' : '▾';
-      bar.classList.toggle('mm-archived-bar--open', !open);
-    });
-  });
-
-  /* --- Lane scroll arrows --- */
+  /* --- Mind map heading jump clicks --- */
   const mmContainer = document.getElementById('mm-container-' + machine.id);
-  if (mmContainer) wireLaneScrollArrows(mmContainer);
-  if (mmContainer) drawLeafConnectors(mmContainer);
+  if (mmContainer) wireMMHeadingJumps(machine, mmContainer);
   if (mmContainer) wireFsBlockDrag(mmContainer, machine);
 
-  /* --- Credential panel: reveal toggle and click-to-edit (always wired) --- */
-  document.querySelectorAll('[data-mm-reveal-cred]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = btn.dataset.mmRevealCred;
-      state.reveal[id] = !state.reveal[id];
-      mount();
-    });
-  });
-  document.querySelectorAll('[data-mm-cred-edit]').forEach((row) => {
-    row.addEventListener('click', (e) => {
-      if (e.target.closest('[data-mm-reveal-cred]')) return;
-      openCredEditModal(row.dataset.mmCredEdit);
-    });
-  });
-
-}
-
-/**
- * Wire the checklist accordion: phase toggle, check/uncheck items (with finding
- * archival on uncheck), port filter, copy command to clipboard, evidence
- * upload/drop/paste/delete/rename, and TOC search/jump.
- */
-function wireChecklist(machine) {
-  const machinePhases = checklistPhaseCatalogForMachine(machine);
-
-  async function addChecklistEvidence(itemId, files) {
-    const imageFiles = getImageFilesFromList(files);
-    if (!imageFiles.length) return;
-    const checklistItem = checklistItemById(itemId);
-    machine.item_evidence = machine.item_evidence || {};
-    machine.item_evidence[itemId] = machine.item_evidence[itemId] || [];
-    const storedFiles = [];
-    for (const file of imageFiles) {
-      const stored = await putEvidenceFile(file);
-      machine.item_evidence[itemId].push(stored);
-      storedFiles.push(stored);
-    }
-    addActivity('updated_checklist', `Added ${imageFiles.length} evidence file(s) to checklist item: ${checklistItem?.name || itemId}`, machine.id);
-    mount();
-    openQuickFindingModal(machine, itemId, storedFiles);
-  }
-
-  document.getElementById('resetChecklistBtn')?.addEventListener('click', async () => {
-    const confirmed = window.confirm('Reset checklist progress and checklist evidence for this machine?');
-    if (!confirmed) return;
-    const allEvidence = Object.values(machine.item_evidence || {}).flat();
-    const completedCount = (machine.completed_items || []).length;
-    await Promise.all(allEvidence.map((file) => deleteEvidenceFile(file.id)));
-    machine.completed_items = [];
-    machine.item_notes = {};
-    machine.item_evidence = {};
-    addActivity('updated_checklist', `Reset checklist: cleared ${completedCount} completed item(s) and ${allEvidence.length} evidence file(s)`, machine.id);
-    mount();
-  });
-
-  document.getElementById('showCompletedTasksBtn')?.addEventListener('click', () => {
-    state.ui.checklistTaskFilter = state.ui.checklistTaskFilter === 'completed' ? 'all' : 'completed';
-    mount();
-  });
-
-  document.getElementById('showIncompleteTasksBtn')?.addEventListener('click', () => {
-    state.ui.checklistTaskFilter = state.ui.checklistTaskFilter === 'incomplete' ? 'all' : 'incomplete';
-    mount();
-  });
-
-  /* ── Section TOC search ── */
-  const tocSearchInput = document.getElementById('tocSearchInput');
-  tocSearchInput?.addEventListener('input', () => {
-    const q = (tocSearchInput.value || '').toLowerCase().trim();
-    /* Filter TOC task buttons */
-    document.querySelectorAll('.section-toc-task').forEach(btn => {
-      const itemIds = (btn.dataset.taskGroup || btn.dataset.taskLink || '')
-        .split(',')
-        .map(id => id.trim())
-        .filter(Boolean);
-      /* Restore / highlight button text */
-      const item0 = itemIds.length ? checklistItemById(itemIds[0]) : null;
-      if (item0) btn.innerHTML = q ? highlightMatch(escapeHtml(item0.name), q) : escapeHtml(item0.name);
-      if (!q) { btn.style.display = ''; return; }
-      const searchItems = itemIds
-        .map((id) => checklistItemById(id))
-        .filter(Boolean);
-      if (!searchItems.length) { btn.style.display = 'none'; return; }
-      const haystack = searchItems.map((item) => [
-        item.name || '',
-        item.description || '',
-        item.command || '',
-        ...(item.commands || []).flatMap(c => [c.desc || '', ...(c.entries || []).map(e => (e.cmd || '') + ' ' + (e.subdesc || ''))]),
-      ].join(' ')).join(' ').toLowerCase();
-      btn.style.display = haystack.includes(q) ? '' : 'none';
-    });
-    /* Show/hide TOC groups that have no visible tasks */
-    document.querySelectorAll('.section-toc-group').forEach(group => {
-      const sublist = group.querySelector('.section-toc-sublist');
-      if (!sublist) return;
-      const anyVisible = [...sublist.querySelectorAll('.section-toc-task')].some(b => b.style.display !== 'none');
-      group.style.display = anyVisible || !q ? '' : 'none';
-      /* Auto-expand groups with matches */
-      if (q && anyVisible) sublist.style.display = 'block';
-    });
-    /* Filter main checklist items + highlight */
-    document.querySelectorAll('.check-item').forEach(el => {
-      if (!q) {
-        el.style.display = '';
-        /* Clear any previous highlights */
-        el.querySelectorAll('mark.search-hl').forEach(m => {
-          const parent = m.parentNode;
-          parent.replaceChild(document.createTextNode(m.textContent), m);
-          parent.normalize();
-        });
-        return;
-      }
-      const text = el.textContent.toLowerCase();
-      const visible = text.includes(q);
-      el.style.display = visible ? '' : 'none';
-      if (visible) applyHighlightsInEl(el, q);
-    });
-    /* Hide phase accordions with no visible items */
-    document.querySelectorAll('.accordion-item').forEach(acc => {
-      if (!q) { acc.style.display = ''; return; }
-      const anyVisible = [...acc.querySelectorAll('.check-item')].some(el => el.style.display !== 'none');
-      acc.style.display = anyVisible ? '' : 'none';
-      /* Auto-expand accordions with matches */
-      if (anyVisible) {
-        const body = acc.querySelector('.accordion-body');
-        if (body) body.style.display = 'block';
-      }
-    });
-  });
-
-  document.querySelectorAll('[data-phase-toggle]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const id = button.dataset.phaseToggle;
-      const open = state.ui.openPhases.includes(id);
-      if (open) {
-        state.ui.openPhases = state.ui.openPhases.filter((phaseId) => phaseId !== id);
-      } else {
-        state.ui.openPhases.push(id);
-      }
-      mount();
-    });
-  });
-
-  document.querySelectorAll('[data-phase-jump]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const phaseId = button.dataset.phaseJump;
-      const jump = () => {
-        document.getElementById(`phase-${machine.id}-${phaseId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      };
-
-      if (!state.ui.openPhases.includes(phaseId)) {
-        state.ui.openPhases.push(phaseId);
-        mount();
-        requestAnimationFrame(jump);
-        return;
-      }
-      jump();
-    });
-  });
-
-  document.querySelectorAll('[data-task-jump]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const taskId = button.dataset.taskJump;
-      const phaseId = button.dataset.taskPhase;
-      if (!taskId || !phaseId) return;
-      const jump = () => {
-        document.getElementById(`task-${machine.id}-${taskId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      };
-
-      if (!state.ui.openPhases.includes(phaseId)) {
-        state.ui.openPhases.push(phaseId);
-        mount();
-        requestAnimationFrame(jump);
-        return;
-      }
-      jump();
-    });
-  });
-
-  document.querySelectorAll('[data-check-item]').forEach((checkbox) => {
-    checkbox.addEventListener('change', async () => {
-      // Save scroll position relative to the toggled checkbox
-      const main = document.getElementById('main');
-      const rect = checkbox.getBoundingClientRect();
-      const mainRect = main.getBoundingClientRect();
-      const offset = rect.top - mainRect.top;
-
-      const itemId = checkbox.dataset.checkItem;
-      const checklistItem = checklistItemById(itemId);
-      const set = new Set(machine.completed_items || []);
-      const justCompleted = checkbox.checked;
-
-      if (!justCompleted) {
-        /* ── Unchecking: find all findings linked to this checklist item ── */
-        const linkedFindings = state.findings.filter(f => f.source_checklist_item_id === itemId);
-
-        if (linkedFindings.length) {
-          const names = linkedFindings.map(f => `  • ${f.title} [${f.severity.toUpperCase()}]`).join('\n');
-          const ok = confirm(
-            `This checklist item has ${linkedFindings.length} linked finding(s):\n\n${names}\n\nUnchecking will DELETE these findings.\nAny tied evidence and credentials will be moved to an archived section (you can delete them manually later).\n\nContinue?`
-          );
-          if (!ok) {
-            // Revert the checkbox
-            checkbox.checked = true;
-            return;
-          }
-
-          /* Archive evidence & credentials from the deleted findings */
-          for (const lf of linkedFindings) archiveFindingData(machine, lf, 'finding_deleted_via_uncheck');
-
-          /* Remove findings */
-          state.findings = state.findings.filter(f => f.source_checklist_item_id !== itemId);
-          const archivedEvCount = linkedFindings.reduce((s, f) => s + (f.evidence || []).length, 0);
-          const archivedCredCount = linkedFindings.reduce((s, f) => s + state.credentials.filter(c => c.finding_id === f.id).length, 0);
-          addActivity('updated_machine', `Removed ${linkedFindings.length} linked finding(s) for unchecked item: ${checklistItem?.name || itemId}. Archived ${archivedEvCount} evidence file(s) and ${archivedCredCount} credential(s).`, machine.id);
-        }
-      }
-
-      if (set.has(itemId)) set.delete(itemId);
-      else set.add(itemId);
-      machine.completed_items = Array.from(set);
-      addActivity('updated_checklist', `${justCompleted ? 'Completed' : 'Unchecked'} checklist item: ${checklistItem?.name || itemId}`, machine.id);
-
-      mount();
-
-      // Restore scroll position so the toggled checkbox stays in place
-      requestAnimationFrame(() => {
-        const newCheckbox = document.querySelector(`[data-check-item="${itemId}"]`);
-        if (newCheckbox) {
-          const newRect = newCheckbox.getBoundingClientRect();
-          const newMainRect = main.getBoundingClientRect();
-          const newOffset = newRect.top - newMainRect.top;
-          main.scrollTop += (newOffset - offset);
-        }
-        if (justCompleted) openQuickFindingModal(machine, itemId);
-      });
-    });
-  });
-
-  document.querySelectorAll('[data-port-filter]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const selectedPort = button.dataset.portFilter;
-      if (selectedPort === '__all__') {
-        machine.selected_ports = [];
-        addActivity('updated_checklist', 'Recon port filter set to All ports', machine.id);
-        mount();
-        return;
-      }
-
-      const selected = new Set(machine.selected_ports || []);
-      if (selected.has(selectedPort)) selected.delete(selectedPort);
-      else selected.add(selectedPort);
-      machine.selected_ports = Array.from(selected).sort((a, b) => Number(a) - Number(b));
-      addActivity('updated_checklist', `Recon port filter ${selected.has(selectedPort) ? 'enabled' : 'disabled'} for port ${selectedPort}`, machine.id);
-      mount();
-    });
-  });
-
-  document.querySelectorAll('[data-copy-cmd],[data-copy-raw-idx]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      let text;
-      if (button.dataset.copyRawIdx !== undefined) {
-        const parts = button.dataset.copyRawIdx.split('__');
-        const itemId = parts[0];
-        const ci = parseInt(parts[1], 10);
-        const ei = parseInt(parts[2], 10);
-        const item = machinePhases.flatMap((phase) => phase.items).find((entry) => entry.id === itemId);
-        if (!item || !item.commands) return;
-        text = substituteTargetIp(item.commands[ci].entries[ei].cmd, machine.ip);
-      } else {
-        const item = machinePhases.flatMap((phase) => phase.items).find((entry) => entry.id === button.dataset.copyCmd);
-        if (!item) return;
-        text = substituteTargetIp(item.command, machine.ip);
-      }
-      await navigator.clipboard.writeText(text);
-      showCopyFeedback(button, 'Copied!');
-    });
-  });
-
-  document.querySelectorAll('[data-evidence-upload]').forEach((input) => {
-    input.addEventListener('change', async () => {
-      const itemId = input.dataset.evidenceUpload;
-      await addChecklistEvidence(itemId, input.files || []);
-      input.value = '';
-    });
-  });
-
-  document.querySelectorAll('[data-evidence-drop]').forEach((zone) => {
-    zone.addEventListener('click', () => {
-      const targetItemId = zone.dataset.evidenceDrop;
-      const input = document.querySelector(`[data-evidence-upload="${targetItemId}"]`);
-      input?.click();
-    });
-
-    zone.addEventListener('dragover', (event) => {
-      event.preventDefault();
-      zone.classList.add('drag-over');
-    });
-
-    zone.addEventListener('mouseenter', () => {
-      zone.focus({ preventScroll: true });
-    });
-
-    zone.addEventListener('dragleave', () => {
-      zone.classList.remove('drag-over');
-    });
-
-    zone.addEventListener('drop', async (event) => {
-      event.preventDefault();
-      zone.classList.remove('drag-over');
-      await addChecklistEvidence(zone.dataset.evidenceDrop, event.dataTransfer?.files || []);
-    });
-
-    zone.addEventListener('paste', async (event) => {
-      const files = getImageFilesFromList(event.clipboardData?.files || []);
-      if (!files.length) return;
-      event.preventDefault();
-      await addChecklistEvidence(zone.dataset.evidenceDrop, files);
-    });
-  });
-
-  document.querySelectorAll('[data-open-evidence]').forEach((button) => {
-    button.addEventListener('click', () => openEvidencePreview(button.dataset.openEvidence));
-  });
-
-  document.querySelectorAll('[data-delete-evidence]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      if (!armConfirmButton(button, button.textContent)) return;
-      const id = button.dataset.deleteEvidence;
-      const itemId = button.dataset.itemId;
-      const file = (machine.item_evidence[itemId] || []).find((entry) => entry.id === id);
-      const checklistItem = checklistItemById(itemId);
-      await deleteEvidenceFile(id);
-      machine.item_evidence[itemId] = (machine.item_evidence[itemId] || []).filter((file) => file.id !== id);
-      if (!machine.item_evidence[itemId].length) delete machine.item_evidence[itemId];
-      addActivity('updated_checklist', `Removed checklist evidence from ${checklistItem?.name || itemId}: ${file?.name || id}`, machine.id);
-
-      // Archive (not delete) any auto-linked findings that were created from uploading this evidence
-      const linkedFindings = state.findings.filter(
-        f => f.source_checklist_item_id === itemId && (f.evidence || []).some(e => e.id === id)
-      );
-      for (const lf of linkedFindings) archiveFindingData(machine, lf, 'finding_deleted_via_evidence_removal', id);
-      if (linkedFindings.length) {
-        const linkedIds = new Set(linkedFindings.map(f => f.id));
-        state.findings = state.findings.filter(f => !linkedIds.has(f.id));
-        addActivity('updated_machine', `Removed ${linkedFindings.length} linked finding(s) after evidence deletion; orphaned data archived`, machine.id);
-      }
-
-      mount();
-    });
-  });
-
-  document.querySelectorAll('[data-rename-evidence]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const itemId = button.dataset.itemId;
-      const evidenceId = button.dataset.renameEvidence;
-      const file = (machine.item_evidence[itemId] || []).find((entry) => entry.id === evidenceId);
-      if (!file) return;
-      const nextName = window.prompt('Rename evidence file', file.name || 'evidence.png');
-      if (!nextName || !nextName.trim()) return;
-      const cleanName = nextName.trim();
-      file.name = cleanName;
-      await updateEvidenceRecordName(evidenceId, cleanName);
-      addActivity('updated_checklist', `Renamed checklist evidence to ${cleanName}`, machine.id);
-      mount();
-    });
-  });
 }
 
 /** Wire credential CRUD: add form toggle/submit, delete with confirm, reveal toggle. */
@@ -3632,7 +4247,7 @@ function openFindingViewModal(findingId) {
           </div>
         </div>
         <label>Title *<input id="fvmTitle" value="${(finding.title || '').replace(/"/g, '&quot;')}" /></label>
-        <label>Description<textarea id="fvmDesc" rows="3" style="width:100%;margin-top:.4rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem">${(finding.description || '').replace(/</g, '&lt;')}</textarea></label>
+        <label>Description<textarea id="fvmDesc" rows="24" style="width:100%;margin-top:.4rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem">${(finding.description || '').replace(/</g, '&lt;')}</textarea></label>
         <div class="split">
           <label>Severity
             <select id="fvmSev">
@@ -4043,7 +4658,7 @@ function openFindingsModal(machine) {
         ${showForm ? `
           <div class="inline-form card" style="margin-bottom:1rem">
             <label>Title *<input id="fmTitle" placeholder="Apache 2.4.49 Path Traversal"></label>
-            <label>Description<textarea id="fmDesc" rows="3" style="width:100%;margin-top:.4rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem"></textarea></label>
+            <label>Description<textarea id="fmDesc" rows="24" style="width:100%;margin-top:.4rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem"></textarea></label>
             <div class="split">
               <label>Severity
                 <select id="fmSeverity">
@@ -4356,47 +4971,6 @@ function openFindingsModal(machine) {
   renderContent();
   showDialogSafely(modal);
   addBackdropClose(modal);
-}
-
-/* ═══════════════════════════════════════════════
-   Notes Modal
-   ═══════════════════════════════════════════════ */
-/** Open the notes modal — a full-screen textarea for per-machine notes. */
-function openNotesModal(machine) {
-  const modal = document.getElementById('notesModal');
-  const container = document.getElementById('notesModalContent');
-  if (!modal || !container) return;
-
-  container.innerHTML = `
-    <div class="fm-header">
-      <h2>📝 Notes — ${machine.ip}</h2>
-      <button class="btn btn-ghost" id="nmClose">✕</button>
-    </div>
-    <div class="fm-body">
-      <textarea id="nmTextarea" rows="20" style="width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.65rem .75rem;font-size:.88rem;line-height:1.6;resize:vertical" placeholder="Write your notes here...">${(machine.notes || '').replace(/</g, '&lt;')}</textarea>
-      <p class="small dim" style="margin-top:.4rem">Auto-saved when you click away.</p>
-    </div>
-  `;
-
-  container.querySelector('#nmClose').addEventListener('click', () => {
-    machine.notes = container.querySelector('#nmTextarea').value;
-    if (machine.notes) addActivity('updated_machine', `Updated notes for ${machine.ip} (${machine.notes.length} chars)`, machine.id);
-    persist();
-    modal.close();
-  });
-
-  container.querySelector('#nmTextarea').addEventListener('blur', e => {
-    machine.notes = e.target.value;
-    if (machine.notes) addActivity('updated_machine', `Updated notes for ${machine.ip} (${machine.notes.length} chars)`, machine.id);
-    persist();
-  });
-
-  showDialogSafely(modal);
-  container.querySelector('#nmTextarea').focus();
-  addBackdropClose(modal, () => {
-    machine.notes = container.querySelector('#nmTextarea')?.value ?? machine.notes;
-    persist();
-  });
 }
 
 /* ═══════════════════════════════════════════════
@@ -4896,7 +5470,7 @@ function openQuickFindingModal(machine, itemId, prefillEvidence = []) {
     <h2 style="margin-bottom:.25rem">Create Finding</h2>
     <div class="small dim" style="margin-bottom:1rem;opacity:.7">from checklist: <em>${item?.name || itemId}</em></div>
     <label>Title *<input id="qfTitle" value="${(item?.name || '').replace(/"/g, '&quot;')}" /></label>
-    <label>Description<textarea id="qfDesc" rows="3" style="width:100%;margin-top:.4rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem"></textarea></label>
+    <label>Description<textarea id="qfDesc" rows="24" style="width:100%;margin-top:.4rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem"></textarea></label>
     <div class="split">
       <label>Severity
         <select id="qfSev">
@@ -4995,7 +5569,7 @@ function openFindingEditModal(findingId) {
       </div>
     </div>
     <label>Title *<input id="femTitle" value="${(finding.title || '').replace(/"/g, '&quot;')}" /></label>
-    <label>Description<textarea id="femDesc" rows="3" style="width:100%;margin-top:.4rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem">${(finding.description || '').replace(/</g, '&lt;')}</textarea></label>
+    <label>Description<textarea id="femDesc" rows="24" style="width:100%;margin-top:.4rem;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:.45rem;padding:.55rem .6rem">${(finding.description || '').replace(/</g, '&lt;')}</textarea></label>
     <div class="split">
       <label>Severity
         <select id="femSev">
@@ -5311,6 +5885,14 @@ function fillMachineSelect() {
    ═══════════════════════════════════════════════ */
 
 /**
+ * Minimal syntax highlighting for doc code blocks — colours comments to match
+ * the checklist cmd-block style.  Input must already be HTML-escaped.
+ */
+function highlightDocCode(escapedCode) {
+  return escapedCode.replace(/^(#.*)$/gm, '<span class="tok-cmt">$1</span>');
+}
+
+/**
  * Render a single documentation entry into readable HTML.
  */
 function renderDocContent(doc) {
@@ -5328,14 +5910,10 @@ function renderDocContent(doc) {
       ).join('');
     }
     if (s.code) {
-      if (s.copyable) {
-        html += `<div class="doc-code-wrapper">`;
-        html += `<button class="doc-code-copy-btn" title="Copy to clipboard">📋 Copy</button>`;
-        html += `<pre class="doc-code"><code>${escapeHtml(s.code)}</code></pre>`;
-        html += `</div>`;
-      } else {
-        html += `<pre class="doc-code"><code>${escapeHtml(s.code)}</code></pre>`;
-      }
+      html += `<div class="doc-code-wrapper">`;
+      html += `<button class="doc-code-copy-btn" title="Copy to clipboard">Copy</button>`;
+      html += `<div class="doc-code"><pre><code>${highlightDocCode(escapeHtml(s.code))}</code></pre></div>`;
+      html += `</div>`;
     }
     if (s.list && s.list.length) {
       const tag = s.numbered ? 'ol' : 'ul';
@@ -5582,6 +6160,315 @@ function openDocsModal(preselectedId) {
   showDialogSafely(modal);
 }
 
+/* ═══════════════════════════════════════════════
+   Checklist Modal
+   ═══════════════════════════════════════════════ */
+/**
+ * Open the checklist as a full-screen modal.
+ * Renders the same checklist accordion but inside a <dialog>.
+ */
+function openChecklistModal(machine) {
+  const modal = document.getElementById('checklistModal');
+  const container = document.getElementById('checklistModalContent');
+  if (!modal || !container) return;
+
+  function renderChecklistModalContent() {
+    const checklistNavPhases = checklistPhasesFor(machine);
+    const checklistHtml = renderChecklist(machine);
+
+    container.innerHTML = `
+      <div class="docs-header">
+        <h2>📋 Checklist — ${machine.ip}</h2>
+        <div class="docs-header-right">
+          <button class="btn btn-ghost docs-close-btn" id="checklistCloseBtn">✕</button>
+        </div>
+      </div>
+      <div class="checklist-modal-layout">
+        <div class="checklist-modal-main">
+          ${checklistHtml}
+        </div>
+        <div class="checklist-modal-toc">
+          <div class="small dim" style="margin-bottom:.6rem">Sections</div>
+          <input type="text" class="section-toc-search" id="tocSearchInput" placeholder="Search tasks…" autocomplete="off" style="margin-bottom:.6rem">
+          <div class="section-toc-list">
+            ${checklistNavPhases.map((phase) => {
+              const expanded = state.ui.openPhases.includes(phase.id);
+              const completedSet = new Set(machine.completed_items || []);
+              return `
+                <div class="section-toc-group">
+                  <button class="section-toc-link${expanded ? ' expanded' : ''}" data-phase-toggle="${phase.id}" type="button" style="color:${phaseColor(phase.id)}">${phase.name} <span class="chevron">${expanded ? '▼' : '▶'}</span></button>
+                  <div class="section-toc-sublist" style="display:${expanded ? 'block' : 'none'}">
+                    ${phase.items.map((item) => `
+                      <button class="section-toc-task${completedSet.has(item.id) ? ' completed' : ''}" data-task-jump="${item.id}" data-task-phase="${phase.id}" data-task-link="${item.id}" type="button">${item.name}</button>
+                    `).join('')}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+
+    container.querySelector('#checklistCloseBtn').addEventListener('click', () => modal.close());
+    wireChecklistInModal(machine, container, renderChecklistModalContent);
+  }
+
+  renderChecklistModalContent();
+  showDialogSafely(modal);
+  addBackdropClose(modal);
+}
+
+/**
+ * Wire checklist event listeners inside the checklist modal.
+ * Similar to wireChecklist but scoped to the modal container,
+ * and re-renders within the modal instead of calling mount().
+ */
+function wireChecklistInModal(machine, container, rerenderFn) {
+  const machinePhases = checklistPhaseCatalogForMachine(machine);
+
+  async function addChecklistEvidence(itemId, files) {
+    const imageFiles = getImageFilesFromList(files);
+    if (!imageFiles.length) return;
+    const checklistItem = checklistItemById(itemId);
+    machine.item_evidence = machine.item_evidence || {};
+    machine.item_evidence[itemId] = machine.item_evidence[itemId] || [];
+    for (const file of imageFiles) {
+      const stored = await putEvidenceFile(file);
+      machine.item_evidence[itemId].push(stored);
+    }
+    addActivity('updated_checklist', `Added ${imageFiles.length} evidence file(s) to checklist item: ${checklistItem?.name || itemId}`, machine.id);
+    rerenderFn();
+  }
+
+  container.querySelector('#resetChecklistBtn')?.addEventListener('click', async () => {
+    const confirmed = window.confirm('Reset checklist progress and checklist evidence for this machine?');
+    if (!confirmed) return;
+    const allEvidence = Object.values(machine.item_evidence || {}).flat();
+    const completedCount = (machine.completed_items || []).length;
+    await Promise.all(allEvidence.map((file) => deleteEvidenceFile(file.id)));
+    machine.completed_items = [];
+    machine.item_notes = {};
+    machine.item_evidence = {};
+    addActivity('updated_checklist', `Reset checklist: cleared ${completedCount} completed item(s) and ${allEvidence.length} evidence file(s)`, machine.id);
+    rerenderFn();
+  });
+
+  container.querySelector('#showCompletedTasksBtn')?.addEventListener('click', () => {
+    state.ui.checklistTaskFilter = state.ui.checklistTaskFilter === 'completed' ? 'all' : 'completed';
+    rerenderFn();
+  });
+
+  container.querySelector('#showIncompleteTasksBtn')?.addEventListener('click', () => {
+    state.ui.checklistTaskFilter = state.ui.checklistTaskFilter === 'incomplete' ? 'all' : 'incomplete';
+    rerenderFn();
+  });
+
+  /* ── Section TOC search ── */
+  let tocSearchTimer;
+  const tocSearchInput = container.querySelector('#tocSearchInput');
+  tocSearchInput?.addEventListener('input', () => {
+    clearTimeout(tocSearchTimer);
+    tocSearchTimer = setTimeout(() => {
+      const q = (tocSearchInput.value || '').toLowerCase().trim();
+      container.querySelectorAll('.section-toc-task').forEach(btn => {
+        const itemIds = (btn.dataset.taskGroup || btn.dataset.taskLink || '').split(',').map(id => id.trim()).filter(Boolean);
+        const item0 = itemIds.length ? checklistItemById(itemIds[0]) : null;
+        if (item0) btn.innerHTML = q ? highlightMatch(escapeHtml(item0.name), q) : escapeHtml(item0.name);
+        if (!q) { btn.style.display = ''; return; }
+        const searchItems = itemIds.map((id) => checklistItemById(id)).filter(Boolean);
+        if (!searchItems.length) { btn.style.display = 'none'; return; }
+        const haystack = searchItems.map((item) => [item.name || '', item.description || '', item.command || '', ...(item.commands || []).flatMap(c => [c.desc || '', ...(c.entries || []).map(e => (e.cmd || '') + ' ' + (e.subdesc || ''))])].join(' ')).join(' ').toLowerCase();
+        btn.style.display = haystack.includes(q) ? '' : 'none';
+      });
+      container.querySelectorAll('.section-toc-group').forEach(group => {
+        const sublist = group.querySelector('.section-toc-sublist');
+        if (!sublist) return;
+        const anyVisible = [...sublist.querySelectorAll('.section-toc-task')].some(b => b.style.display !== 'none');
+        group.style.display = anyVisible || !q ? '' : 'none';
+        if (q && anyVisible) sublist.style.display = 'block';
+      });
+      container.querySelectorAll('.check-item').forEach(el => {
+        if (!q) { el.style.display = ''; el.querySelectorAll('mark.search-hl').forEach(m => { const p = m.parentNode; p.replaceChild(document.createTextNode(m.textContent), m); p.normalize(); }); return; }
+        const text = el.textContent.toLowerCase();
+        const visible = text.includes(q);
+        el.style.display = visible ? '' : 'none';
+        if (visible) applyHighlightsInEl(el, q);
+      });
+      container.querySelectorAll('.accordion-item').forEach(acc => {
+        if (!q) { acc.style.display = ''; return; }
+        const anyVisible = [...acc.querySelectorAll('.check-item')].some(el => el.style.display !== 'none');
+        acc.style.display = anyVisible ? '' : 'none';
+        if (anyVisible) { const body = acc.querySelector('.accordion-body'); if (body) body.style.display = 'block'; }
+      });
+    }, 150);
+  });
+
+  container.querySelectorAll('[data-phase-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = button.dataset.phaseToggle;
+      const open = state.ui.openPhases.includes(id);
+      if (open) state.ui.openPhases = state.ui.openPhases.filter((phaseId) => phaseId !== id);
+      else state.ui.openPhases.push(id);
+      rerenderFn();
+    });
+  });
+
+  container.querySelectorAll('[data-phase-jump]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const phaseId = button.dataset.phaseJump;
+      if (!state.ui.openPhases.includes(phaseId)) {
+        state.ui.openPhases.push(phaseId);
+        rerenderFn();
+      }
+      requestAnimationFrame(() => {
+        container.querySelector(`#phase-${machine.id}-${phaseId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  });
+
+  container.querySelectorAll('[data-task-jump]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const taskId = button.dataset.taskJump;
+      const phaseId = button.dataset.taskPhase;
+      if (!taskId || !phaseId) return;
+      if (!state.ui.openPhases.includes(phaseId)) {
+        state.ui.openPhases.push(phaseId);
+        rerenderFn();
+      }
+      requestAnimationFrame(() => {
+        container.querySelector(`#task-${machine.id}-${taskId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  });
+
+  container.querySelectorAll('[data-check-item]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      const itemId = checkbox.dataset.checkItem;
+      const checklistItem = checklistItemById(itemId);
+      const set = new Set(machine.completed_items || []);
+      const justCompleted = checkbox.checked;
+
+      if (!justCompleted) {
+        const linkedFindings = state.findings.filter(f => f.source_checklist_item_id === itemId);
+        if (linkedFindings.length) {
+          const names = linkedFindings.map(f => `  • ${f.title} [${f.severity.toUpperCase()}]`).join('\n');
+          const ok = confirm(`This checklist item has ${linkedFindings.length} linked finding(s):\n\n${names}\n\nUnchecking will DELETE these findings.\n\nContinue?`);
+          if (!ok) { checkbox.checked = true; return; }
+          for (const lf of linkedFindings) archiveFindingData(machine, lf, 'finding_deleted_via_uncheck');
+          state.findings = state.findings.filter(f => f.source_checklist_item_id !== itemId);
+        }
+      }
+
+      if (set.has(itemId)) set.delete(itemId);
+      else set.add(itemId);
+      machine.completed_items = Array.from(set);
+      addActivity('updated_checklist', `${justCompleted ? 'Completed' : 'Unchecked'} checklist item: ${checklistItem?.name || itemId}`, machine.id);
+      persist();
+      rerenderFn();
+    });
+  });
+
+  container.querySelectorAll('[data-copy-cmd],[data-copy-raw-idx]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      let text;
+      if (button.dataset.copyRawIdx !== undefined) {
+        const parts = button.dataset.copyRawIdx.split('__');
+        const itemId = parts[0];
+        const ci = parseInt(parts[1], 10);
+        const ei = parseInt(parts[2], 10);
+        const item = machinePhases.flatMap((phase) => phase.items).find((entry) => entry.id === itemId);
+        if (!item || !item.commands) return;
+        text = substituteTargetIp(item.commands[ci].entries[ei].cmd, machine.ip);
+      } else {
+        const item = machinePhases.flatMap((phase) => phase.items).find((entry) => entry.id === button.dataset.copyCmd);
+        if (!item) return;
+        text = substituteTargetIp(item.command, machine.ip);
+      }
+      await navigator.clipboard.writeText(text);
+      showCopyFeedback(button, 'Copied!');
+    });
+  });
+
+  container.querySelectorAll('[data-evidence-upload]').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const itemId = input.dataset.evidenceUpload;
+      await addChecklistEvidence(itemId, input.files || []);
+      input.value = '';
+    });
+  });
+
+  container.querySelectorAll('[data-evidence-drop]').forEach((dz) => {
+    dz.addEventListener('click', () => {
+      const input = container.querySelector(`[data-evidence-upload="${dz.dataset.evidenceDrop}"]`);
+      if (input) input.click();
+    });
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+    dz.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dz.classList.remove('dragover');
+      await addChecklistEvidence(dz.dataset.evidenceDrop, e.dataTransfer.files);
+    });
+    dz.addEventListener('focus', () => dz.classList.add('focused'));
+    dz.addEventListener('blur', () => dz.classList.remove('focused'));
+    dz.addEventListener('keydown', (e) => {
+      if (e.key === 'v' && (e.ctrlKey || e.metaKey)) {
+        /* handled by paste below */
+      }
+    });
+    dz.addEventListener('paste', async (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files = [];
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const f = item.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+      if (files.length) {
+        e.preventDefault();
+        await addChecklistEvidence(dz.dataset.evidenceDrop, files);
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-open-evidence]').forEach((btn) => {
+    btn.addEventListener('click', () => openEvidencePreview(btn.dataset.openEvidence));
+  });
+
+  container.querySelectorAll('[data-delete-evidence]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const fileId = btn.dataset.deleteEvidence;
+      const itemId = btn.dataset.itemId;
+      const ok = confirm('Delete this evidence file?');
+      if (!ok) return;
+      await deleteEvidenceFile(fileId);
+      if (machine.item_evidence?.[itemId]) {
+        machine.item_evidence[itemId] = machine.item_evidence[itemId].filter(f => f.id !== fileId);
+      }
+      persist();
+      rerenderFn();
+    });
+  });
+
+  container.querySelectorAll('[data-rename-evidence]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const fileId = btn.dataset.renameEvidence;
+      const itemId = btn.dataset.itemId;
+      const file = (machine.item_evidence?.[itemId] || []).find(f => f.id === fileId);
+      if (!file) return;
+      const newName = prompt('Rename evidence file:', file.name);
+      if (!newName || newName === file.name) return;
+      file.name = newName;
+      await updateEvidenceRecordName(fileId, newName);
+      persist();
+      rerenderFn();
+    });
+  });
+}
+
 /** Wire click handlers for .doc-code-copy-btn buttons inside a root element. */
 function wireDocCodeCopyButtons(rootEl) {
   rootEl.querySelectorAll('.doc-code-copy-btn').forEach(btn => {
@@ -5736,6 +6623,19 @@ function openAiDocsModal(preselectedId) {
 
 /* Re-render the page whenever the URL hash changes. */
 window.addEventListener('hashchange', mount);
+
+/* ── Image zoom modal ── */
+{
+  const zoomModal = document.getElementById('imageZoomModal');
+  const zoomClose = document.getElementById('imageZoomClose');
+  if (zoomModal) {
+    zoomClose?.addEventListener('click', () => zoomModal.close());
+    zoomModal.addEventListener('click', (e) => {
+      /* Close if clicking the backdrop (outside the image) */
+      if (e.target === zoomModal) zoomModal.close();
+    });
+  }
+}
 
 /* Sidebar collapse/expand toggle. */
 document.getElementById('sidebarToggle').addEventListener('click', () => {
